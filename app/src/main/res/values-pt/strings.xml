@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PDF Toolkit</string>
+    <string name="nav_tools">Ferramentas</string>
+    <string name="nav_notes">Notas</string>
+    <string name="nav_more">Mais</string>
+    <string name="tools_home_title">PDF Toolkit</string>
+    <string name="tools_search_hint">Pesquisar ferramentas…</string>
+    <string name="recent_files_header">Arquivos recentes</string>
+    <string name="see_all_library">Abrir biblioteca</string>
+    <string name="favorites_header">Favoritos</string>
+    <string name="section_pdf_tools">Ferramentas PDF</string>
+    <string name="section_documents_notes">Documentos e notas</string>
+    <string name="more_title">Mais e Configurações</string>
+    <string name="notes_tab_title">Notas e Listas</string>
+    <string name="runs_on_device">Funciona 100% no seu dispositivo</string>
+    <string name="vault_title">Cofre privado e backup</string>
+    <string name="feedback_title">Feedback e suporte</string>
+    <string name="language_title">Idioma</string>
+    <string name="language_system">Padrão do sistema</string>
+    <string name="cancel">Cancelar</string>
+    <string name="navigate_back">Voltar</string>
+    <string name="shortcut_scan_short">Digitalizar</string>
+    <string name="shortcut_scan_long">Digitalizar documento</string>
+    <string name="shortcut_sign_short">Assinar</string>
+    <string name="shortcut_sign_long">Assinar PDF</string>
+    <string name="shortcut_merge_short">Mesclar</string>
+    <string name="shortcut_merge_long">Mesclar PDFs</string>
+    <string name="shortcut_notes_short">Notas</string>
+    <string name="shortcut_notes_long">Notas e listas</string>
+    <string name="more_subtitle_offline">100% offline • Sem envios para a nuvem</string>
+    <string name="more_library_title">Biblioteca de documentos</string>
+    <string name="more_library_subtitle">Navegue por PDFs, categorias, favoritos e leitura em voz alta</string>
+    <string name="more_vault_title">Cofre privado e backup</string>
+    <string name="more_vault_subtitle">Cofre AES-256 com biometria/PIN e backups criptografados</string>
+    <string name="more_security_privacy">Segurança e privacidade</string>
+    <string name="more_appearance">Aparência</string>
+    <string name="more_language">Idioma</string>
+    <string name="more_feedback_title">Feedback e suporte</string>
+    <string name="more_feedback_subtitle">Rascunhos offline, diagnóstico sanitizado e avaliação</string>
+    <string name="more_onboarding_title">Guia de boas-vindas</string>
+    <string name="more_onboarding_subtitle">Rever o tour rápido e a introdução de privacidade</string>
+</resources>

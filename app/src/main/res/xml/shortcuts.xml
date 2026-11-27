@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="shortcut_scan"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_scan_short"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="com.example.ACTION_SHORTCUT"
+            android:targetPackage="com.aistudio.pdftoolkit.xkqmzv"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="shortcut_tool" android:value="doc_scanner" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_sign"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_sign_short"
+        android:shortcutLongLabel="@string/shortcut_sign_long">
+        <intent
+            android:action="com.example.ACTION_SHORTCUT"
+            android:targetPackage="com.aistudio.pdftoolkit.xkqmzv"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="shortcut_tool" android:value="sign" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_merge"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_merge_short"
+        android:shortcutLongLabel="@string/shortcut_merge_long">
+        <intent
+            android:action="com.example.ACTION_SHORTCUT"
+            android:targetPackage="com.aistudio.pdftoolkit.xkqmzv"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="shortcut_tool" android:value="merge" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shortcut_notes"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_notes_short"
+        android:shortcutLongLabel="@string/shortcut_notes_long">
+        <intent
+            android:action="com.example.ACTION_SHORTCUT"
+            android:targetPackage="com.aistudio.pdftoolkit.xkqmzv"
+            android:targetClass="com.example.MainActivity">
+            <extra android:name="shortcut_tool" android:value="notes" />
+        </intent>
+    </shortcut>
+</shortcuts>

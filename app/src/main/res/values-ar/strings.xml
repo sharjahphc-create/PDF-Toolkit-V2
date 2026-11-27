@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PDF Toolkit</string>
+    <string name="nav_tools">الأدوات</string>
+    <string name="nav_notes">الملاحظات</string>
+    <string name="nav_more">المزيد</string>
+    <string name="tools_home_title">PDF Toolkit</string>
+    <string name="tools_search_hint">ابحث عن الأدوات…</string>
+    <string name="recent_files_header">الملفات الأخيرة</string>
+    <string name="see_all_library">فتح المكتبة</string>
+    <string name="favorites_header">المفضلة</string>
+    <string name="section_pdf_tools">أدوات PDF</string>
+    <string name="section_documents_notes">المستندات والملاحظات</string>
+    <string name="more_title">المزيد والإعدادات</string>
+    <string name="notes_tab_title">الملاحظات والقوائم</string>
+    <string name="runs_on_device">يعمل 100% على جهازك</string>
+    <string name="vault_title">الخزنة الخاصة والنسخ الاحتياطي</string>
+    <string name="feedback_title">الملاحظات والدعم</string>
+    <string name="language_title">اللغة</string>
+    <string name="language_system">لغة النظام الافتراضية</string>
+    <string name="cancel">إلغاء</string>
+    <string name="navigate_back">رجوع</string>
+    <string name="shortcut_scan_short">مسح</string>
+    <string name="shortcut_scan_long">مسح مستند ضوئيًا</string>
+    <string name="shortcut_sign_short">توقيع</string>
+    <string name="shortcut_sign_long">توقيع PDF</string>
+    <string name="shortcut_merge_short">دمج</string>
+    <string name="shortcut_merge_long">دمج ملفات PDF</string>
+    <string name="shortcut_notes_short">ملاحظات</string>
+    <string name="shortcut_notes_long">الملاحظات والقوائم</string>
+    <string name="more_subtitle_offline">يعمل 100% دون اتصال • بدون تحميل سحابي</string>
+    <string name="more_library_title">مكتبة المستندات</string>
+    <string name="more_library_subtitle">تصفح ملفات PDF والفئات والإشارات والقراءة الصوتية</string>
+    <string name="more_vault_title">الخزنة الخاصة والنسخ الاحتياطي</string>
+    <string name="more_vault_subtitle">خزنة AES-256 بالبصمة أو رمز PIN ونسخ احتياطي مشفر</string>
+    <string name="more_security_privacy">الأمان والخصوصية</string>
+    <string name="more_appearance">المظهر</string>
+    <string name="more_language">اللغة</string>
+    <string name="more_feedback_title">الملاحظات والدعم</string>
+    <string name="more_feedback_subtitle">مسودات المشكلات والتشخيص والتقييم دون اتصال</string>
+    <string name="more_onboarding_title">دليل الترحيب</string>
+    <string name="more_onboarding_subtitle">إعادة عرض الجولة السريعة وإرشادات الخصوصية</string>
+</resources>

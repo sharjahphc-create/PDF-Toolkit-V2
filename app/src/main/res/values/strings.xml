@@ -1,0 +1,151 @@
+<resources>
+    <string name="app_name">PDF Toolkit</string>
+    <string name="section_one_badge">SECTION 1 • ARCHITECTURE, LIBRARY &amp; TTS ENGINE</string>
+    <string name="library_title">Document Library</string>
+    <string name="library_subtitle">100% offline on-device storage &amp; read-aloud engine</string>
+    <string name="import_document">Import PDF or Text</string>
+    <string name="import_sample">Load Sample PDF</string>
+    <string name="category_all">All</string>
+    <string name="category_work">Work</string>
+    <string name="category_personal">Personal</string>
+    <string name="category_bills">Bills</string>
+    <string name="category_ids">IDs</string>
+    <string name="category_school">School</string>
+    <string name="empty_library_title">Your offline library is ready</string>
+    <string name="empty_library_subtitle">Import a PDF or text document via Storage Access Framework, or load the bundled sample guide to test text extraction and TTS playback.</string>
+    <string name="search_library_hint">Search titles, filenames, or indexed text…</string>
+    <string name="tts_player_title">Read Aloud Engine</string>
+    <string name="tts_ready">Ready on device</string>
+    <string name="tts_speaking">Speaking</string>
+    <string name="tts_paused">Paused</string>
+    <string name="tts_initializing">Initializing TTS…</string>
+    <string name="tts_unavailable">Text-to-Speech engine unavailable on this device</string>
+    <string name="tts_play">Play</string>
+    <string name="tts_pause">Pause</string>
+    <string name="tts_stop">Stop</string>
+    <string name="tts_previous_sentence">Previous sentence</string>
+    <string name="tts_next_sentence">Next sentence</string>
+    <string name="tts_speed_label">Speed %.2fx</string>
+    <string name="tts_sleep_timer_off">Sleep timer off</string>
+    <string name="tts_sleep_timer_active">Sleep in %1$d:%2$02d</string>
+    <string name="tts_voice_default">System Default Voice</string>
+    <string name="open_tts_listen">Listen</string>
+    <string name="delete_document">Remove from library</string>
+    <string name="share_document">Share</string>
+    <string name="undo">Undo</string>
+    <string name="document_removed">Removed from library</string>
+    <string name="pages_format">%1$d pages</string>
+    <string name="sentences_progress_format">Sentence %1$d of %2$d</string>
+    <string name="runs_on_device">Runs 100% on your device</string>
+
+    <!-- Section 2: Design System & Shared Components -->
+    <string name="runs_on_your_device">Runs on your device</string>
+    <string name="step_pick">Pick</string>
+    <string name="step_configure">Configure</string>
+    <string name="step_process">Process</string>
+    <string name="step_done">Done</string>
+    <string name="navigate_back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="processing_on_device">Processing on your device…</string>
+    <string name="action_open">Open</string>
+    <string name="action_save_as">Save as</string>
+    <string name="action_save_to_category">Category</string>
+    <string name="move_to_category_title">Move to category</string>
+    <string name="design_system_title">Design System</string>
+    <string name="design_system_subtitle">Section 2 • Shared components &amp; tokens</string>
+
+    <!-- Section 3: Tools Home, Navigation, View Modes -->
+    <string name="nav_tools">Tools</string>
+    <string name="nav_notes">Notes</string>
+    <string name="nav_more">More</string>
+    <string name="tools_home_title">PDF Toolkit</string>
+    <string name="tools_search_hint">Search tools…</string>
+    <string name="recent_files_header">Recent files</string>
+    <string name="see_all_library">Open Library</string>
+    <string name="favorites_header">Favorites</string>
+    <string name="favorites_hint">Long-press any tool to pin here, drag to reorder</string>
+    <string name="section_pdf_tools">PDF tools</string>
+    <string name="section_documents_notes">Documents &amp; notes</string>
+    <string name="view_mode_grid">2-column grid view</string>
+    <string name="view_mode_list">List view</string>
+    <string name="view_mode_compact">3-column compact grid view</string>
+    <string name="sort_default">Default</string>
+    <string name="sort_a_to_z">A to Z</string>
+    <string name="sort_most_used">Most used</string>
+    <string name="pin_to_favorites">Pin to Favorites</string>
+    <string name="unpin_from_favorites">Remove from Favorites</string>
+    <string name="more_title">More &amp; Settings</string>
+    <string name="notes_tab_title">Notes &amp; Lists</string>
+
+    <!-- Section 4: Sign Tool -->
+    <string name="sign_title">Sign PDF</string>
+    <string name="sign_subtitle">Draw your signature, place it cleanly</string>
+    <string name="sign_step_draw">Draw</string>
+    <string name="sign_step_place">Place</string>
+    <string name="sign_step_save">Save</string>
+    <string name="sign_save_for_reuse">Save to Signature Vault</string>
+    <string name="sign_vault_title">Signature Vault</string>
+    <string name="sign_place_signature">Place signature</string>
+    <string name="sign_confirm_title">Confirm signature placement</string>
+    <string name="sign_confirm_button">Confirm</string>
+    <string name="sign_adjust_button">Adjust</string>
+    <string name="sign_placed_snackbar">Signature placed</string>
+    <string name="sign_save_new_copy">Save signed copy</string>
+    <string name="sign_replace_original">Replace original</string>
+    <string name="sign_replace_warning">This will permanently overwrite the source PDF with the flattened signature. Save a new copy instead unless you are sure.</string>
+
+    <!-- Section 5: Core PDF Tools -->
+    <string name="digital_sig_distinct_notice">Cryptographic PKCS#12 Digital ID — verifies document integrity and differs from the visual Sign tool.</string>
+    <string name="fill_form_title">Fill a Form</string>
+    <string name="compress_title">Compress PDF</string>
+    <string name="merge_title">Merge PDFs</string>
+    <string name="split_title">Split PDF</string>
+    <string name="organize_title">Organize Pages</string>
+    <string name="digital_sig_title">Digital Signature</string>
+    <string name="password_title">PDF Password</string>
+    <string name="photos_to_pdf_title">Photos → PDF</string>
+    <string name="copy_text_title">Copy Text (OCR)</string>
+
+    <!-- Section 6: Documents & Notes -->
+    <string name="word_title">Word (.docx)</string>
+    <string name="excel_title">Excel (.xlsx)</string>
+    <string name="powerpoint_title">PowerPoint (.pptx)</string>
+    <string name="new_document">Create new</string>
+    <string name="export_pdf">Export as PDF</string>
+    <string name="notes_search_hint">Search notes &amp; checklists…</string>
+    <string name="note_type_text">Text Note</string>
+    <string name="note_type_checklist">Checklist</string>
+    <string name="note_type_shopping">Shopping</string>
+    <string name="note_type_voice">Voice Memo</string>
+    <string name="voice_dictate">Dictate</string>
+    <string name="voice_stop">Stop Listening</string>
+
+    <!-- Sections 7-15: Shortcuts, Widget, Reader, Vault, Localization -->
+    <string name="shortcut_scan_short">Scan</string>
+    <string name="shortcut_scan_long">Scan Document</string>
+    <string name="shortcut_sign_short">Sign</string>
+    <string name="shortcut_sign_long">Sign PDF</string>
+    <string name="shortcut_merge_short">Merge</string>
+    <string name="shortcut_merge_long">Merge PDFs</string>
+    <string name="shortcut_notes_short">Notes</string>
+    <string name="shortcut_notes_long">Notes &amp; Lists</string>
+    <string name="widget_description">Quick access to Scan, Sign, Notes, and Library offline</string>
+    <string name="language_title">Language</string>
+    <string name="language_system">System Default</string>
+    <string name="vault_title">Private Vault &amp; Backup</string>
+    <string name="vault_subtitle">Biometric / PIN AES-256 vault and encrypted SAF backups</string>
+    <string name="feedback_title">Feedback &amp; Support</string>
+    <string name="feedback_subtitle">Offline issue drafts, sanitized diagnostics &amp; rating</string>
+    <string name="more_subtitle_offline">100% offline • No cloud uploads or tracking</string>
+    <string name="more_library_title">Document Library</string>
+    <string name="more_library_subtitle">Browse PDFs, categories, bookmarks &amp; Read Aloud</string>
+    <string name="more_vault_title">Private Vault &amp; Backup</string>
+    <string name="more_vault_subtitle">Biometric / PIN AES-256 vault and encrypted SAF backups</string>
+    <string name="more_security_privacy">Security &amp; Privacy</string>
+    <string name="more_appearance">Appearance</string>
+    <string name="more_language">Language</string>
+    <string name="more_feedback_title">Feedback &amp; Support</string>
+    <string name="more_feedback_subtitle">Offline issue drafts, sanitized diagnostics &amp; rating</string>
+    <string name="more_onboarding_title">Welcome Guide</string>
+    <string name="more_onboarding_subtitle">Replay the privacy-first walkthrough &amp; quick tour</string>
+</resources>
