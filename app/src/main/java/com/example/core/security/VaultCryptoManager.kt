@@ -51,7 +51,11 @@ class VaultCryptoManager @Inject constructor(
     suspend fun encryptFileToVault(sourceFile: File, docId: String): Result<File> =
         withContext(ioDispatcher) {
             runCatching {
-                val vaultDir = File(context.filesDir, "vault").apply { mkdirs() }
+                val vaultDir = File(context.filesDir, "vault").apply {
+                    mkdirs()
+                    val noMedia = File(this, ".nomedia")
+                    if (!noMedia.exists()) noMedia.createNewFile()
+                }
                 val encryptedFile = File(vaultDir, "$docId.enc")
                 val plainBytes = sourceFile.readBytes()
                 val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)

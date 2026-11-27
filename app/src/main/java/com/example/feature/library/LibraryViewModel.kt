@@ -3,12 +3,16 @@ package com.example.feature.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.core.datastore.LibraryViewMode
+import com.example.core.datastore.PreferencesRepository
 import com.example.core.tts.TtsEngine
 import com.example.core.tts.TtsPlaybackState
 import com.example.data.repository.LibraryRepository
 import com.example.domain.model.DocumentCategory
+import com.example.domain.model.DocumentCollection
 import com.example.domain.model.LibraryDocument
 import com.example.domain.model.LibrarySortOrder
+import com.example.domain.model.ReadingProgress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,19 +23,34 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class ContinueReadingItem(
+    val document: LibraryDocument,
+    val progress: ReadingProgress
+)
+
 data class LibraryUiState(
     val searchQuery: String = "",
     val selectedCategoryId: String? = null,
+    val selectedCollectionId: String? = null,
+    val selectedTag: String? = null,
+    val availableTags: List<String> = emptyList(),
     val sortOrder: LibrarySortOrder = LibrarySortOrder.RECENT,
+    val viewMode: LibraryViewMode = LibraryViewMode.COVERS_GRID,
     val categories: List<DocumentCategory> = emptyList(),
+    val collections: List<DocumentCollection> = emptyList(),
+    val continueReading: List<ContinueReadingItem> = emptyList(),
+    val progressByDocId: Map<String, ReadingProgress> = emptyMap(),
     val documents: List<LibraryDocument> = emptyList(),
     val isImporting: Boolean = false,
-    val totalTtsMinutes: Int = 0
+    val totalTtsMinutes: Int = 0,
+    val totalMinutesRead: Int = 0
 )
 
 sealed interface LibraryEvent {
@@ -42,11 +61,14 @@ sealed interface LibraryEvent {
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
+    private val preferencesRepository: PreferencesRepository,
     private val ttsEngine: TtsEngine
 ) : ViewModel() {
 
     private val searchQuery = MutableStateFlow("")
     private val selectedCategoryId = MutableStateFlow<String?>(null)
+    private val selectedCollectionId = MutableStateFlow<String?>(null)
+    private val selectedTag = MutableStateFlow<String?>(null)
     private val sortOrder = MutableStateFlow(LibrarySortOrder.RECENT)
     private val isImporting = MutableStateFlow(false)
 
@@ -56,39 +78,97 @@ class LibraryViewModel @Inject constructor(
     val ttsState: StateFlow<TtsPlaybackState> = ttsEngine.state
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    private val collectionDocIdsFlow = selectedCollectionId.flatMapLatest { colId ->
+        if (colId == null) flowOf<Set<String>?>(null)
+        else libraryRepository.observeDocumentIdsInCollection(colId).map { it.toSet() }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private val documentsFlow = combine(
         searchQuery,
         selectedCategoryId,
-        sortOrder
-    ) { query, catId, sort ->
-        Triple(query, catId, sort)
-    }.flatMapLatest { (query, catId, sort) ->
+        sortOrder,
+        collectionDocIdsFlow,
+        selectedTag
+    ) { query, catId, sort, colDocIds, tag ->
+        FilterParams(query, catId, sort, colDocIds, tag)
+    }.flatMapLatest { params ->
         libraryRepository.observeDocuments(
-            query = query,
-            categoryId = catId,
-            sortOrder = sort,
+            query = params.query,
+            categoryId = params.categoryId,
+            sortOrder = params.sortOrder,
             includeLocked = false
-        )
+        ).map { docs ->
+            val colFiltered = if (params.collectionDocIds == null) docs else docs.filter { it.id in params.collectionDocIds }
+            if (params.tag.isNullOrBlank()) colFiltered
+            else colFiltered.filter { doc -> doc.tags.any { it.equals(params.tag, ignoreCase = true) } }
+        }
+    }
+
+    private val libraryViewModeFlow = preferencesRepository.preferences
+        .map { it.libraryViewMode }
+
+    private val allUnlockedDocsFlow = libraryRepository.observeDocuments(
+        query = "",
+        categoryId = null,
+        sortOrder = LibrarySortOrder.RECENT,
+        includeLocked = false
+    )
+
+    private val readingStatsAndProgressFlow = combine(
+        allUnlockedDocsFlow,
+        libraryRepository.observeAllReadingProgress(),
+        libraryRepository.observeTotalTtsMinutes(),
+        libraryRepository.observeTotalMinutesRead()
+    ) { allDocs, allProgress, ttsMins, readMins ->
+        val progressMap = allProgress.associateBy { it.documentId }
+        val docMap = allDocs.associateBy { it.id }
+        val continueList = allProgress.mapNotNull { prog ->
+            val doc = docMap[prog.documentId] ?: return@mapNotNull null
+            ContinueReadingItem(document = doc, progress = prog)
+        }.take(8)
+        val distinctTags = allDocs.flatMap { it.tags }.distinct().sorted()
+        StatsBundle(continueList, progressMap, ttsMins, readMins, distinctTags)
+    }
+
+    private val filterHeaderFlow = combine(
+        searchQuery,
+        selectedCategoryId,
+        selectedCollectionId,
+        selectedTag,
+        sortOrder
+    ) { q, cat, col, tag, sort ->
+        FilterHeader(q, cat, col, tag, sort)
     }
 
     val uiState: StateFlow<LibraryUiState> = combine(
-        searchQuery,
-        selectedCategoryId,
-        sortOrder,
+        filterHeaderFlow,
+        libraryViewModeFlow,
         libraryRepository.observeCategories(),
+        libraryRepository.observeCollections(),
         documentsFlow,
         isImporting,
-        libraryRepository.observeTotalTtsMinutes()
+        readingStatsAndProgressFlow
     ) { values ->
         @Suppress("UNCHECKED_CAST")
+        val header = values[0] as FilterHeader
+        val stats = values[6] as StatsBundle
         LibraryUiState(
-            searchQuery = values[0] as String,
-            selectedCategoryId = values[1] as String?,
-            sortOrder = values[2] as LibrarySortOrder,
-            categories = values[3] as List<DocumentCategory>,
+            searchQuery = header.query,
+            selectedCategoryId = header.categoryId,
+            selectedCollectionId = header.collectionId,
+            selectedTag = header.tag,
+            availableTags = stats.availableTags,
+            sortOrder = header.sortOrder,
+            viewMode = values[1] as LibraryViewMode,
+            categories = values[2] as List<DocumentCategory>,
+            collections = values[3] as List<DocumentCollection>,
             documents = values[4] as List<LibraryDocument>,
             isImporting = values[5] as Boolean,
-            totalTtsMinutes = values[6] as Int
+            continueReading = stats.continueReading,
+            progressByDocId = stats.progressByDocId,
+            totalTtsMinutes = stats.totalTtsMinutes,
+            totalMinutesRead = stats.totalMinutesRead
         )
     }.stateIn(
         scope = viewModelScope,
@@ -108,17 +188,87 @@ class LibraryViewModel @Inject constructor(
         selectedCategoryId.value = categoryId
     }
 
+    fun onCollectionSelected(collectionId: String?) {
+        selectedCollectionId.value = collectionId
+    }
+
+    fun onTagSelected(tag: String?) {
+        selectedTag.value = tag
+    }
+
     fun onSortOrderSelected(order: LibrarySortOrder) {
         sortOrder.value = order
     }
 
-    fun importDocument(uri: Uri) {
+    fun toggleLibraryViewMode() {
+        val next = if (uiState.value.viewMode == LibraryViewMode.COVERS_GRID) {
+            LibraryViewMode.LIST
+        } else {
+            LibraryViewMode.COVERS_GRID
+        }
+        viewModelScope.launch { preferencesRepository.setLibraryViewMode(next) }
+    }
+
+    fun createCategory(name: String, iconName: String, colorHex: Long, isLocked: Boolean) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val created = libraryRepository.createCategory(clean, iconName, colorHex, isLocked)
+            if (!isLocked) {
+                selectedCategoryId.value = created.id
+            }
+            val suffix = if (isLocked) " (Locked Vault category)" else ""
+            _events.emit(LibraryEvent.ShowMessage("Created category \"${created.name}\"$suffix"))
+        }
+    }
+
+    fun updateDocumentTags(documentId: String, tags: List<String>) {
+        viewModelScope.launch {
+            libraryRepository.updateDocumentTags(documentId, tags)
+            _events.emit(LibraryEvent.ShowMessage("Updated tags"))
+        }
+    }
+
+    fun createCollection(name: String, description: String = "") {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val created = libraryRepository.createCollection(clean, description)
+            selectedCollectionId.value = created.id
+            _events.emit(LibraryEvent.ShowMessage("Created collection \"${created.name}\""))
+        }
+    }
+
+    fun addDocumentToCollection(document: LibraryDocument, collection: DocumentCollection) {
+        viewModelScope.launch {
+            libraryRepository.addDocumentToCollection(document.id, collection.id)
+            _events.emit(LibraryEvent.ShowMessage("Added \"${document.title}\" to ${collection.name}"))
+        }
+    }
+
+    fun importDocument(uri: Uri, categoryId: String? = selectedCategoryId.value, deleteOriginal: Boolean = false) {
         viewModelScope.launch {
             isImporting.update { true }
-            val result = libraryRepository.importFromUri(uri, selectedCategoryId.value)
+            val result = libraryRepository.importFromUriWithMode(
+                uri = uri,
+                categoryId = categoryId,
+                deleteOriginal = deleteOriginal
+            )
             isImporting.update { false }
-            result.onSuccess { doc ->
-                _events.emit(LibraryEvent.ShowMessage("Imported \"${doc.title}\""))
+            result.onSuccess { res ->
+                val msg = when {
+                    res.document.isLocked && deleteOriginal && res.originalDeleted ->
+                        "Moved & encrypted \"${res.document.title}\" in Vault (original deleted)"
+                    res.document.isLocked ->
+                        "Encrypted \"${res.document.title}\" in Vault"
+                    deleteOriginal && res.originalDeleted ->
+                        "Moved \"${res.document.title}\" (original deleted)"
+                    deleteOriginal ->
+                        "Copied \"${res.document.title}\" (provider blocked deleting original)"
+                    else ->
+                        "Imported \"${res.document.title}\""
+                }
+                _events.emit(LibraryEvent.ShowMessage(msg))
             }.onFailure { err ->
                 _events.emit(LibraryEvent.ShowMessage(err.localizedMessage ?: "Failed to import file"))
             }
@@ -160,8 +310,14 @@ class LibraryViewModel @Inject constructor(
 
     fun moveToCategory(documentId: String, categoryId: String?) {
         viewModelScope.launch {
+            val cat = uiState.value.categories.firstOrNull { it.id == categoryId }
             libraryRepository.moveToCategory(documentId, categoryId)
-            _events.emit(LibraryEvent.ShowMessage("Updated document category"))
+            val msg = if (cat?.isLocked == true) {
+                "Encrypted & moved to locked category \"${cat.name}\""
+            } else {
+                "Moved to ${cat?.name ?: "Library"}"
+            }
+            _events.emit(LibraryEvent.ShowMessage(msg))
         }
     }
 
@@ -224,4 +380,28 @@ class LibraryViewModel @Inject constructor(
     fun setPitch(pitch: Float) = ttsEngine.setPitch(pitch)
     fun selectVoice(voiceName: String) = ttsEngine.selectVoice(voiceName)
     fun setSleepTimer(minutes: Int) = ttsEngine.setSleepTimer(minutes)
+
+    private data class FilterParams(
+        val query: String,
+        val categoryId: String?,
+        val sortOrder: LibrarySortOrder,
+        val collectionDocIds: Set<String>?,
+        val tag: String?
+    )
+
+    private data class FilterHeader(
+        val query: String,
+        val categoryId: String?,
+        val collectionId: String?,
+        val tag: String?,
+        val sortOrder: LibrarySortOrder
+    )
+
+    private data class StatsBundle(
+        val continueReading: List<ContinueReadingItem>,
+        val progressByDocId: Map<String, ReadingProgress>,
+        val totalTtsMinutes: Int,
+        val totalMinutesRead: Int,
+        val availableTags: List<String>
+    )
 }

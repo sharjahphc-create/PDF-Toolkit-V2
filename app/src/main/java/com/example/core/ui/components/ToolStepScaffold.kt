@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +63,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.core.common.OperationProgress
+import com.example.ui.theme.LocalHairlineBorderColor
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 
 enum class ToolStep(val index: Int, val labelRes: Int) {
     PICK(0, R.string.step_pick),
@@ -78,7 +83,7 @@ fun ToolStepper(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -103,8 +108,9 @@ fun ToolStepper(
                     color = when {
                         isActive -> MaterialTheme.colorScheme.primary
                         isCompleted -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.surfaceVariant
+                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
                     },
+                    border = if (!isActive && !isCompleted) surfaceHairlineBorder() else null,
                     modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -148,7 +154,7 @@ fun ToolStepper(
                         .height(2.dp)
                         .background(
                             if (isCompleted) MaterialTheme.colorScheme.tertiary
-                            else MaterialTheme.colorScheme.outlineVariant
+                            else LocalHairlineBorderColor.current
                         )
                 )
             }
@@ -174,6 +180,7 @@ fun ToolWorkflowScaffold(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = snackbarHost,
         topBar = {
             TopAppBar(
@@ -214,27 +221,29 @@ fun ToolWorkflowScaffold(
         },
         bottomBar = {
             if (primaryButtonText != null && onPrimaryClick != null) {
+                val primaryInteraction = remember { MutableInteractionSource() }
                 Surface(
-                    tonalElevation = 3.dp,
-                    color = MaterialTheme.colorScheme.surface,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        HorizontalDivider(color = LocalHairlineBorderColor.current)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .widthIn(max = 600.dp),
+                                .widthIn(max = 600.dp)
+                                .navigationBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (secondaryActionText != null && onSecondaryClick != null) {
                                 TextButton(
                                     onClick = onSecondaryClick,
+                                    shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier
                                         .heightIn(min = 48.dp)
                                         .testTag("tool_secondary_action")
@@ -245,10 +254,12 @@ fun ToolWorkflowScaffold(
                             Button(
                                 onClick = onPrimaryClick,
                                 enabled = primaryButtonEnabled,
-                                shape = MaterialTheme.shapes.large,
+                                interactionSource = primaryInteraction,
+                                shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(min = 52.dp)
+                                    .tactilePressScale(primaryInteraction)
                                     .testTag("tool_primary_button")
                             ) {
                                 Text(
@@ -274,7 +285,7 @@ fun ToolWorkflowScaffold(
                     .widthIn(max = 720.dp)
             ) {
                 ToolStepper(currentStep = currentStep)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(color = LocalHairlineBorderColor.current)
                 AnimatedContent(
                     targetState = currentStep,
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -301,7 +312,9 @@ fun ProcessingProgressView(
 ) {
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
             .fillMaxWidth()
             .testTag("processing_progress_card")
@@ -343,6 +356,7 @@ fun ProcessingProgressView(
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton(
                     onClick = onCancel,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .testTag("cancel_processing_button")
@@ -369,7 +383,9 @@ fun ToolDoneCard(
 ) {
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
             .fillMaxWidth()
             .testTag("tool_done_card")
@@ -423,22 +439,30 @@ fun ToolDoneCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val openInteraction = remember { MutableInteractionSource() }
                 Button(
                     onClick = onOpen,
+                    interactionSource = openInteraction,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
+                        .tactilePressScale(openInteraction)
                         .testTag("done_open_button")
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.action_open))
                 }
+                val shareInteraction = remember { MutableInteractionSource() }
                 FilledTonalButton(
                     onClick = onShare,
+                    interactionSource = shareInteraction,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
+                        .tactilePressScale(shareInteraction)
                         .testTag("done_share_button")
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -453,6 +477,7 @@ fun ToolDoneCard(
             ) {
                 OutlinedButton(
                     onClick = onSaveAs,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -464,6 +489,7 @@ fun ToolDoneCard(
                 }
                 OutlinedButton(
                     onClick = onSaveToCategory,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)

@@ -19,6 +19,7 @@ import com.example.core.datastore.UserPreferences
 import com.example.data.repository.LibraryRepository
 import com.example.navigation.PdfToolkitAppShell
 import com.example.system.PdfToolkitQuickSettingsTileService
+import com.example.system.SharedIntentBridge
 import com.example.ui.theme.PdfToolkitTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +45,11 @@ sealed interface LaunchCommand {
         override val commandId: String = UUID.randomUUID().toString()
     ) : LaunchCommand
 
+    data class OpenDocumentId(
+        val documentId: String,
+        override val commandId: String = UUID.randomUUID().toString()
+    ) : LaunchCommand
+
     data class OpenTab(
         val tabKey: String,
         override val commandId: String = UUID.randomUUID().toString()
@@ -58,6 +64,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var libraryRepository: LibraryRepository
+
+    @Inject
+    lateinit var sharedIntentBridge: SharedIntentBridge
 
     private val launchCommandFlow = MutableStateFlow<LaunchCommand?>(null)
 
@@ -111,6 +120,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun parseIntent(intent: Intent?) {
         if (intent == null) return
+        val resumeDocId = intent.getStringExtra(PdfToolkitQuickSettingsTileService.EXTRA_DOCUMENT_ID)
+        if (!resumeDocId.isNullOrBlank()) {
+            launchCommandFlow.value = LaunchCommand.OpenDocumentId(resumeDocId)
+            return
+        }
+
         val shortcutTool = intent.getStringExtra(PdfToolkitQuickSettingsTileService.EXTRA_SHORTCUT_TOOL)
         if (!shortcutTool.isNullOrBlank()) {
             launchCommandFlow.value = when (shortcutTool) {
@@ -133,6 +148,7 @@ class MainActivity : AppCompatActivity() {
                 val mime = intent.type.orEmpty()
                 if (streamUri != null) {
                     if (mime.startsWith("image/")) {
+                        sharedIntentBridge.enqueueSharedImages(listOf(streamUri))
                         launchCommandFlow.value = LaunchCommand.OpenSharedImages(listOf(streamUri))
                     } else {
                         launchCommandFlow.value = LaunchCommand.OpenDocumentUri(
@@ -140,8 +156,12 @@ class MainActivity : AppCompatActivity() {
                             fromViewIntent = false
                         )
                     }
-                } else if (mime == "text/plain" && !intent.getStringExtra(Intent.EXTRA_TEXT).isNullOrBlank()) {
-                    launchCommandFlow.value = LaunchCommand.OpenTab("notes")
+                } else if (mime == "text/plain") {
+                    val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    if (!sharedText.isNullOrBlank()) {
+                        sharedIntentBridge.enqueueSharedText(sharedText)
+                        launchCommandFlow.value = LaunchCommand.OpenTab("notes")
+                    }
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
@@ -149,6 +169,7 @@ class MainActivity : AppCompatActivity() {
                 val mime = intent.type.orEmpty()
                 if (uris.isNotEmpty()) {
                     if (mime.startsWith("image/")) {
+                        sharedIntentBridge.enqueueSharedImages(uris)
                         launchCommandFlow.value = LaunchCommand.OpenSharedImages(uris)
                     } else {
                         launchCommandFlow.value = LaunchCommand.OpenDocumentUri(

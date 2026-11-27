@@ -11,20 +11,24 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarDuration
@@ -32,7 +36,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +63,7 @@ import com.example.core.ui.components.ToolDoneCard
 import com.example.core.ui.components.ToolStep
 import com.example.core.ui.components.ToolWorkflowScaffold
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignRoute(
     onExit: () -> Unit,
@@ -327,38 +332,65 @@ fun SignRoute(
 
     if (uiState.passwordPromptFile != null) {
         var passwordInput by remember { mutableStateOf("") }
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = viewModel::dismissPasswordPrompt,
-            title = { Text("Password-protected PDF") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Enter password to unlock ${uiState.passwordPromptName}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    OutlinedTextField(
-                        value = passwordInput,
-                        onValueChange = { passwordInput = it },
-                        label = { Text("PDF Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("sign_pdf_password_input")
-                    )
-                    uiState.passwordError?.let { err ->
-                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Password-protected PDF",
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = "Enter password to unlock ${uiState.passwordPromptName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text("PDF Password") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sign_pdf_password_input")
+                )
+                uiState.passwordError?.let { err ->
+                    Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = viewModel::dismissPasswordPrompt,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(
+                        onClick = { viewModel.submitPdfPassword(passwordInput) },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Unlock")
                     }
                 }
-            },
-            confirmButton = {
-                Button(onClick = { viewModel.submitPdfPassword(passwordInput) }) {
-                    Text("Unlock")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::dismissPasswordPrompt) {
-                    Text(stringResource(R.string.cancel))
-                }
+                Spacer(Modifier.height(8.dp))
             }
-        )
+        }
     }
 }

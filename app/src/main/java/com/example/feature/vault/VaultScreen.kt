@@ -17,43 +17,39 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
-import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -69,8 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -80,6 +75,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.core.ui.components.CopyOrMoveImportSheet
+import com.example.core.ui.components.CreateCategoryDialog
 import com.example.core.ui.components.EmptyStateView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,17 +92,31 @@ fun VaultRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var showPickDocSheet by remember { mutableStateOf(false) }
-    var pendingBackupExportPass by remember { mutableStateOf<String?>(null) }
+    var showCreateLockedCatDialog by remember { mutableStateOf(false) }
+    var pendingDeviceImportUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingBackupExportConfig by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var showBackupPassDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    val importDeviceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingDeviceImportUri = uri
+        }
+    }
 
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        val pass = pendingBackupExportPass
-        pendingBackupExportPass = null
-        if (uri != null && !pass.isNullOrBlank()) {
-            viewModel.exportEncryptedBackup(uri, pass)
+        val config = pendingBackupExportConfig
+        pendingBackupExportConfig = null
+        if (uri != null && config != null && config.first.isNotBlank()) {
+            viewModel.exportEncryptedBackup(
+                destUri = uri,
+                passphrase = config.first,
+                includeVaultFiles = config.second
+            )
         }
     }
 
@@ -117,7 +128,7 @@ fun VaultRoute(
         }
     }
 
-    // Prevent screenshots and recents thumbnails while Vault is open
+    // Prevent screenshots and blank recents preview while Vault is open
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
         window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -194,11 +205,15 @@ fun VaultRoute(
                 },
                 actions = {
                     if (state.isUnlocked) {
-                        IconButton(
+                        FilledTonalButton(
                             onClick = viewModel::lockVault,
-                            modifier = Modifier.testTag("vault_lock_now_button")
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .testTag("vault_lock_now_button")
                         ) {
-                            Icon(Icons.Default.Lock, contentDescription = "Lock Vault now")
+                            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Lock now")
                         }
                     }
                 },
@@ -229,13 +244,28 @@ fun VaultRoute(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (state.isBusy) {
-                        item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
+                        item(key = "vault_busy") { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
                     }
 
-                    item {
+                    item(key = "vault_uninstall_warning") {
+                        VaultUninstallWarningCard()
+                    }
+
+                    item(key = "vault_categories_row") {
+                        VaultCategoryCardsRow(
+                            summaries = state.categorySummaries,
+                            selectedFilterId = state.selectedCategoryFilterId,
+                            onSelectFilter = viewModel::selectCategoryFilter,
+                            onCreateLockedCategoryClick = { showCreateLockedCatDialog = true }
+                        )
+                    }
+
+                    item(key = "vault_protection_card") {
                         Card(
                             shape = MaterialTheme.shapes.large,
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -246,19 +276,38 @@ fun VaultRoute(
                                     Icon(Icons.Default.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                     Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Vault Protection Active", style = MaterialTheme.typography.titleMedium)
+                                        Text("Vault & App Lock", style = MaterialTheme.typography.titleMedium)
                                         Text(
-                                            "${state.lockedDocuments.size} encrypted document(s)",
+                                            "${state.lockedDocuments.size} file(s) • ${formatVaultStorage(state.totalVaultStorageBytes)} encrypted",
                                             style = MaterialTheme.typography.bodySmall
                                         )
                                     }
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
                                         onClick = { showPickDocSheet = true },
-                                        modifier = Modifier.testTag("vault_add_doc_button")
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("vault_add_doc_button")
                                     ) {
                                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Encrypt File")
+                                        Text("From Library")
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            importDeviceLauncher.launch(
+                                                arrayOf("application/pdf", "image/*", "text/plain", "*/*")
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("vault_import_device_button")
+                                    ) {
+                                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Import File")
                                     }
                                 }
 
@@ -267,10 +316,38 @@ fun VaultRoute(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Hide locked thumbnails", style = MaterialTheme.typography.bodyMedium)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Lock whole app", style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "Require biometric or PIN when opening PDF Toolkit",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = state.prefs.appLockEnabled,
+                                        onCheckedChange = viewModel::setAppLockEnabled,
+                                        modifier = Modifier.testTag("vault_app_lock_switch")
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Hide locked thumbnails & titles", style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "Masks document titles & previews in Vault list",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                     Switch(
                                         checked = state.prefs.hideLockedThumbnails,
-                                        onCheckedChange = viewModel::setHideLockedThumbnails
+                                        onCheckedChange = viewModel::setHideLockedThumbnails,
+                                        modifier = Modifier.testTag("vault_hide_titles_switch")
                                     )
                                 }
 
@@ -287,7 +364,7 @@ fun VaultRoute(
                         }
                     }
 
-                    item {
+                    item(key = "vault_backup_card") {
                         Card(
                             shape = MaterialTheme.shapes.large,
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -299,14 +376,16 @@ fun VaultRoute(
                             ) {
                                 Text("Encrypted Offline Backup", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Bundle documents, notes, bookmarks, highlights, and Vault files into a passphrase-encrypted .pdftk file via Storage Access Framework.",
+                                    "Export notes, saved signatures, highlights, settings, and optionally Vault files into a passphrase-encrypted .pdftk archive via SAF.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Button(
                                         onClick = { showBackupPassDialog = true },
-                                        modifier = Modifier.weight(1f).testTag("vault_export_backup_button")
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("vault_export_backup_button")
                                     ) {
                                         Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
@@ -314,7 +393,9 @@ fun VaultRoute(
                                     }
                                     OutlinedButton(
                                         onClick = { restoreBackupLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
-                                        modifier = Modifier.weight(1f).testTag("vault_restore_backup_button")
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("vault_restore_backup_button")
                                     ) {
                                         Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
@@ -325,18 +406,23 @@ fun VaultRoute(
                         }
                     }
 
-                    if (state.lockedDocuments.isEmpty()) {
-                        item {
+                    if (state.filteredLockedDocuments.isEmpty()) {
+                        item(key = "vault_empty_state") {
                             EmptyStateView(
                                 icon = Icons.Default.Lock,
-                                title = "No encrypted documents yet",
-                                subtitle = "Move sensitive IDs, tax forms, or contracts here to encrypt them with Android Keystore AES-256-GCM.",
+                                title = "No encrypted documents here",
+                                subtitle = "Encrypt files from your Library or import directly from device storage with AES-256-GCM.",
                                 primaryActionLabel = "Encrypt from Library",
                                 onPrimaryAction = { showPickDocSheet = true }
                             )
                         }
                     } else {
-                        items(state.lockedDocuments, key = { it.id }) { doc ->
+                        itemsIndexed(state.filteredLockedDocuments, key = { _, doc -> doc.id }) { idx, doc ->
+                            val maskedTitle = if (state.prefs.hideLockedThumbnails) {
+                                "Protected Document #${idx + 1}"
+                            } else {
+                                doc.title
+                            }
                             Card(
                                 shape = MaterialTheme.shapes.large,
                                 modifier = Modifier
@@ -364,9 +450,14 @@ fun VaultRoute(
                                     }
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(doc.title, style = MaterialTheme.typography.titleSmall)
                                         Text(
-                                            "${doc.pageCount} pages • AES-256 encrypted",
+                                            text = maskedTitle,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "${doc.pageCount} pages • ${formatVaultStorage(doc.fileSizeBytes)} • AES-256",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -384,188 +475,53 @@ fun VaultRoute(
     }
 
     if (showPickDocSheet) {
-        AlertDialog(
-            onDismissRequest = { showPickDocSheet = false },
-            title = { Text("Move Document to Vault") },
-            text = {
-                if (state.unlockedDocuments.isEmpty()) {
-                    Text("All documents in your Library are already encrypted or none imported yet.")
-                } else {
-                    LazyColumn(modifier = Modifier.height(260.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(state.unlockedDocuments, key = { it.id }) { doc ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        viewModel.lockDocument(doc)
-                                        showPickDocSheet = false
-                                    }
-                            ) {
-                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(doc.title, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    }
-                }
+        PickLibraryDocToVaultDialog(
+            unlockedDocuments = state.unlockedDocuments,
+            onSelectDoc = { doc -> viewModel.lockDocument(doc) },
+            onDismiss = { showPickDocSheet = false }
+        )
+    }
+
+    if (showCreateLockedCatDialog) {
+        CreateCategoryDialog(
+            defaultLocked = true,
+            onConfirm = { name, icon, color, _ ->
+                viewModel.createLockedCategory(name, icon, color)
             },
-            confirmButton = {
-                TextButton(onClick = { showPickDocSheet = false }) { Text("Close") }
-            }
+            onDismiss = { showCreateLockedCatDialog = false }
+        )
+    }
+
+    pendingDeviceImportUri?.let { uri ->
+        CopyOrMoveImportSheet(
+            title = "Import & Encrypt to Vault",
+            subtitle = "File will be encrypted with AES-256-GCM inside app-private storage.",
+            categories = state.lockedCategories,
+            defaultCategoryId = state.selectedCategoryFilterId?.takeUnless { it == VaultViewModel.GENERAL_VAULT_FILTER_ID },
+            onConfirmCopy = { catId ->
+                viewModel.importFromDeviceToVault(uri, categoryId = catId, deleteOriginal = false)
+            },
+            onConfirmMove = { catId ->
+                viewModel.importFromDeviceToVault(uri, categoryId = catId, deleteOriginal = true)
+            },
+            onDismiss = { pendingDeviceImportUri = null }
         )
     }
 
     if (showBackupPassDialog) {
-        var passphrase by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showBackupPassDialog = false },
-            title = { Text("Encrypt Backup Passphrase") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Choose a strong passphrase (min 4 characters). You will need it to restore this backup.")
-                    OutlinedTextField(
-                        value = passphrase,
-                        onValueChange = { passphrase = it },
-                        label = { Text("Passphrase") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+        ExportBackupPassphraseDialog(
+            onConfirm = { passphrase, includeVaultFiles ->
+                pendingBackupExportConfig = passphrase to includeVaultFiles
+                exportBackupLauncher.launch("pdf_toolkit_backup_${System.currentTimeMillis()}.pdftk")
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        pendingBackupExportPass = passphrase
-                        showBackupPassDialog = false
-                        exportBackupLauncher.launch("pdf_toolkit_backup_${System.currentTimeMillis()}.pdftk")
-                    },
-                    enabled = passphrase.length >= 4
-                ) { Text("Continue") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackupPassDialog = false }) { Text(stringResource(R.string.cancel)) }
-            }
+            onDismiss = { showBackupPassDialog = false }
         )
     }
 
     pendingRestoreUri?.let { uri ->
-        var passphrase by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { pendingRestoreUri = null },
-            title = { Text("Decrypt Backup") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Enter the passphrase used when creating this .pdftk backup.")
-                    OutlinedTextField(
-                        value = passphrase,
-                        onValueChange = { passphrase = it },
-                        label = { Text("Passphrase") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.restoreEncryptedBackup(uri, passphrase)
-                        pendingRestoreUri = null
-                    },
-                    enabled = passphrase.length >= 4
-                ) { Text("Restore") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRestoreUri = null }) { Text(stringResource(R.string.cancel)) }
-            }
+        RestoreBackupPassphraseDialog(
+            onConfirm = { passphrase -> viewModel.restoreEncryptedBackup(uri, passphrase) },
+            onDismiss = { pendingRestoreUri = null }
         )
-    }
-}
-
-@Composable
-private fun VaultLockGate(
-    isPinConfigured: Boolean,
-    pinError: String?,
-    onCreatePin: (String) -> Unit,
-    onVerifyPin: (String) -> Unit,
-    onBiometricUnlock: () -> Unit
-) {
-    var pinInput by remember { mutableStateOf("") }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 460.dp)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(72.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(34.dp)
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = if (isPinConfigured) "Enter Vault PIN" else "Set Up Private Vault PIN",
-            style = MaterialTheme.typography.headlineSmall
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = if (isPinConfigured) {
-                "Documents inside the Vault stay hidden from Recent Files and Search."
-            } else {
-                "Create a 4+ digit PIN to protect encrypted documents and backups."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(18.dp))
-        OutlinedTextField(
-            value = pinInput,
-            onValueChange = { if (it.length <= 12) pinInput = it },
-            label = { Text(if (isPinConfigured) "PIN" else "New PIN (4+ digits)") },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("vault_pin_input")
-        )
-        if (pinError != null) {
-            Spacer(Modifier.height(6.dp))
-            Text(pinError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(14.dp))
-        Button(
-            onClick = {
-                if (isPinConfigured) onVerifyPin(pinInput) else onCreatePin(pinInput)
-            },
-            enabled = pinInput.length >= 4,
-            modifier = Modifier.fillMaxWidth().testTag("vault_unlock_button")
-        ) {
-            Text(if (isPinConfigured) "Unlock Vault" else "Save PIN & Unlock")
-        }
-        if (isPinConfigured) {
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onBiometricUnlock,
-                modifier = Modifier.fillMaxWidth().testTag("vault_biometric_button")
-            ) {
-                Icon(Icons.Default.Fingerprint, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Unlock with Biometrics")
-            }
-        }
     }
 }

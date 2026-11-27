@@ -11,6 +11,7 @@ import com.example.data.repository.ToolUsageRepository
 import com.example.feature.documents.engine.DocxDocumentModel
 import com.example.feature.documents.engine.DocxParagraphItem
 import com.example.feature.documents.engine.OfficeDocumentEngine
+import com.example.system.SharedIntentBridge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -50,7 +51,8 @@ class NotesViewModel @Inject constructor(
     private val notesRepository: NotesRepository,
     private val officeEngine: OfficeDocumentEngine,
     private val libraryRepository: LibraryRepository,
-    private val toolUsageRepository: ToolUsageRepository
+    private val toolUsageRepository: ToolUsageRepository,
+    private val sharedIntentBridge: SharedIntentBridge
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -70,6 +72,22 @@ class NotesViewModel @Inject constructor(
 
     private val _events = MutableSharedFlow<NotesEvent>()
     val events: SharedFlow<NotesEvent> = _events.asSharedFlow()
+
+    init {
+        viewModelScope.launch {
+            sharedIntentBridge.pendingSharedText.collect { pending ->
+                if (!pending.isNullOrBlank()) {
+                    val text = sharedIntentBridge.consumeSharedText() ?: return@collect
+                    val firstLine = text.lineSequence().firstOrNull()?.trim().orEmpty().take(48)
+                    _editorDraft.value = NoteEditorDraft(
+                        title = firstLine.ifBlank { "Shared Note" },
+                        content = text,
+                        noteType = NoteType.TEXT
+                    )
+                }
+            }
+        }
+    }
 
     val notes: StateFlow<List<NoteModel>> = combine(
         notesRepository.observeNotes(),

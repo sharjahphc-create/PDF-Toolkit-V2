@@ -16,6 +16,9 @@ interface ReaderDao {
     @Query("SELECT * FROM reading_progress WHERE document_id = :documentId AND is_deleted = 0 LIMIT 1")
     fun observeProgress(documentId: String): Flow<ReadingProgressEntity?>
 
+    @Query("SELECT * FROM reading_progress WHERE is_deleted = 0 ORDER BY updated_at DESC")
+    fun observeAllProgress(): Flow<List<ReadingProgressEntity>>
+
     @Query("SELECT * FROM reading_progress WHERE document_id = :documentId AND is_deleted = 0 LIMIT 1")
     suspend fun getProgress(documentId: String): ReadingProgressEntity?
 

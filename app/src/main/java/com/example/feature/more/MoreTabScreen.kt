@@ -1,7 +1,13 @@
 package com.example.feature.more
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
@@ -27,23 +34,30 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -53,6 +67,10 @@ import com.example.core.datastore.PreferencesRepository
 import com.example.core.datastore.ThemeMode
 import com.example.core.datastore.UserPreferences
 import com.example.core.ui.components.RunsOnDeviceBadge
+import com.example.system.OfflinePrivacyVerifier
+import com.example.system.PdfToolkitWidgetReceiver
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 import kotlinx.coroutines.launch
 
 private data class LocaleOption(
@@ -81,10 +99,15 @@ fun MoreTabScreen(
     onOpenOnboarding: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val privacyReport = remember(context) { OfflinePrivacyVerifier.inspect(context) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -143,7 +166,9 @@ fun MoreTabScreen(
                 item {
                     Card(
                         shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        border = surfaceHairlineBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -202,7 +227,9 @@ fun MoreTabScreen(
                 item {
                     Card(
                         shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        border = surfaceHairlineBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -237,7 +264,9 @@ fun MoreTabScreen(
                 item {
                     Card(
                         shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        border = surfaceHairlineBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -270,6 +299,98 @@ fun MoreTabScreen(
                                         label = { Text(localeOption.label) },
                                         modifier = Modifier.testTag("locale_chip_${localeOption.tag.ifEmpty { "system" }}")
                                     )
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card(
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ),
+                        border = surfaceHairlineBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("more_privacy_audit_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = stringResource(R.string.more_privacy_audit_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                            Text(
+                                text = if (privacyReport.isFullyOffline && privacyReport.usesSafOnly) {
+                                    stringResource(R.string.more_privacy_verified)
+                                } else {
+                                    "Offline permission check active"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Quick Settings Tile (Scan PDF) & 4 Launcher App Shortcuts ready.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val manager = AppWidgetManager.getInstance(context)
+                                        val provider = ComponentName(context, PdfToolkitWidgetReceiver::class.java)
+                                        if (manager.isRequestPinAppWidgetSupported) {
+                                            val requested = manager.requestPinAppWidget(provider, null, null)
+                                            if (!requested) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("Add PDF Toolkit from your launcher's widget drawer")
+                                                }
+                                            }
+                                        } else {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Long-press your home screen to add the PDF Toolkit widget")
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.testTag("more_pin_widget_button")
+                                ) {
+                                    Icon(Icons.Default.Widgets, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.more_pin_widget))
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        runCatching { context.startActivity(intent) }.onFailure {
+                                            val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                data = Uri.fromParts("package", context.packageName, null)
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            runCatching { context.startActivity(fallback) }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.testTag("more_default_pdf_button")
+                                ) {
+                                    Text(stringResource(R.string.more_default_pdf_settings))
                                 }
                             }
                         }
@@ -315,14 +436,22 @@ private fun MoreActionCard(
     onClick: () -> Unit,
     testTag: String
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Card(
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .tactilePressScale(interactionSource)
             .clip(MaterialTheme.shapes.large)
             .testTag(testTag)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material3.ripple(),
+                onClick = onClick
+            )
     ) {
         Row(
             modifier = Modifier.padding(16.dp),

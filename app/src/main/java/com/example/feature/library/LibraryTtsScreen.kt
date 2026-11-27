@@ -1,6 +1,7 @@
 package com.example.feature.library
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -11,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoStories
@@ -39,8 +42,12 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
@@ -101,12 +108,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.core.datastore.LibraryViewMode
 import com.example.core.tts.TtsPlaybackState
 import com.example.core.tts.TtsStatus
+import com.example.core.ui.components.CopyOrMoveImportSheet
+import com.example.core.ui.components.CreateCategoryDialog
+import com.example.core.ui.components.EditDocumentTagsDialog
+import com.example.core.ui.components.MoveToCategoryBottomSheet
+import com.example.core.ui.components.categoryIconForName
 import com.example.domain.model.DocumentCategory
 import com.example.domain.model.LibraryDocument
 import com.example.domain.model.LibrarySortOrder
 import com.example.ui.theme.LiterataFontFamily
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 import java.io.File
 import java.util.Locale
 
@@ -120,11 +135,18 @@ fun LibraryTtsRoute(
     val ttsState by viewModel.ttsState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    var showCreateCollectionDialog by remember { mutableStateOf(false) }
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
+    var docForCategoryMove by remember { mutableStateOf<LibraryDocument?>(null) }
+    var docForTagsEdit by remember { mutableStateOf<LibraryDocument?>(null) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
 
     val openDocLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { viewModel.importDocument(it) }
+        if (uri != null) {
+            pendingImportUri = uri
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -155,6 +177,7 @@ fun LibraryTtsRoute(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = {
             SnackbarHost(
@@ -177,12 +200,32 @@ fun LibraryTtsRoute(
                         )
                     }
                 },
+                actions = {
+                    IconButton(
+                        onClick = viewModel::toggleLibraryViewMode,
+                        modifier = Modifier.testTag("library_view_mode_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.viewMode == LibraryViewMode.COVERS_GRID) {
+                                Icons.AutoMirrored.Filled.ViewList
+                            } else {
+                                Icons.Default.GridView
+                            },
+                            contentDescription = if (uiState.viewMode == LibraryViewMode.COVERS_GRID) {
+                                "Switch to List view"
+                            } else {
+                                "Switch to Covers Grid view"
+                            }
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
         floatingActionButton = {
+            val fabInteraction = remember { MutableInteractionSource() }
             ExtendedFloatingActionButton(
                 onClick = {
                     openDocLauncher.launch(
@@ -194,13 +237,16 @@ fun LibraryTtsRoute(
                         )
                     )
                 },
+                interactionSource = fabInteraction,
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .navigationBarsPadding()
+                    .tactilePressScale(fabInteraction)
                     .testTag("import_document_fab"),
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
                 text = { Text(stringResource(R.string.import_document)) },
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     ) { innerPadding ->
@@ -241,8 +287,18 @@ fun LibraryTtsRoute(
                     item(key = "header_banner") {
                         OfflineBadgeCard(
                             totalDocs = uiState.documents.size,
+                            totalReadMinutes = uiState.totalMinutesRead,
                             totalTtsMinutes = uiState.totalTtsMinutes
                         )
+                    }
+
+                    if (uiState.continueReading.isNotEmpty() && uiState.searchQuery.isBlank()) {
+                        item(key = "continue_reading_row") {
+                            ContinueReadingCarousel(
+                                items = uiState.continueReading,
+                                onOpenReader = onOpenReader
+                            )
+                        }
                     }
 
                     item(key = "search_bar") {
@@ -262,17 +318,50 @@ fun LibraryTtsRoute(
                                 }
                             },
                             singleLine = true,
-                            shape = MaterialTheme.shapes.large
+                            shape = RoundedCornerShape(14.dp)
                         )
                     }
 
                     item(key = "category_chips") {
                         CategoryFilterRow(
-                            categories = uiState.categories,
+                            categories = uiState.categories.filterNot { it.isLocked },
                             selectedCategoryId = uiState.selectedCategoryId,
                             sortOrder = uiState.sortOrder,
                             onSelectCategory = viewModel::onCategorySelected,
+                            onCreateCategoryClick = { showCreateCategoryDialog = true },
                             onSelectSort = viewModel::onSortOrderSelected
+                        )
+                    }
+
+                    if (uiState.availableTags.isNotEmpty()) {
+                        item(key = "tag_chips") {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                items(uiState.availableTags, key = { it }) { tag ->
+                                    FilterChip(
+                                        selected = uiState.selectedTag == tag,
+                                        onClick = {
+                                            viewModel.onTagSelected(if (uiState.selectedTag == tag) null else tag)
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Label, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                        label = { Text("#$tag") },
+                                        modifier = Modifier.testTag("tag_chip_$tag")
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "collections_row") {
+                        CollectionsFilterRow(
+                            collections = uiState.collections,
+                            selectedCollectionId = uiState.selectedCollectionId,
+                            onSelectCollection = viewModel::onCollectionSelected,
+                            onCreateCollectionClick = { showCreateCollectionDialog = true }
                         )
                     }
 
@@ -291,9 +380,52 @@ fun LibraryTtsRoute(
                             EmptyLibraryCard(
                                 onLoadSample = viewModel::loadSamplePdf,
                                 onImportSaf = {
-                                    openDocLauncher.launch(arrayOf("application/pdf", "text/plain"))
+                                    openDocLauncher.launch(
+                                        arrayOf(
+                                            "application/pdf",
+                                            "application/epub+zip",
+                                            "text/plain",
+                                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        )
+                                    )
                                 }
                             )
+                        }
+                    } else if (uiState.viewMode == LibraryViewMode.COVERS_GRID) {
+                        val rows = uiState.documents.chunked(2)
+                        items(
+                            items = rows,
+                            key = { pair -> pair.joinToString("_") { it.id } }
+                        ) { rowDocs ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                rowDocs.forEach { doc ->
+                                    val category = uiState.categories.firstOrNull { it.id == doc.categoryId }
+                                    val isActiveTts = ttsState.documentId == doc.id &&
+                                        (ttsState.status == TtsStatus.SPEAKING || ttsState.status == TtsStatus.PAUSED)
+                                    LibraryCoverGridCard(
+                                        document = doc,
+                                        category = category,
+                                        progress = uiState.progressByDocId[doc.id],
+                                        collections = uiState.collections,
+                                        isActiveTts = isActiveTts,
+                                        onOpenClick = { onOpenReader(doc.id) },
+                                        onListenClick = { viewModel.listenToDocument(doc) },
+                                        onMoveCategoryClick = { docForCategoryMove = doc },
+                                        onEditTagsClick = { docForTagsEdit = doc },
+                                        onAddToCollection = { col -> viewModel.addDocumentToCollection(doc, col) },
+                                        onLockVaultClick = { viewModel.moveToVault(doc) },
+                                        onShareClick = { viewModel.shareDocument(doc) },
+                                        onDeleteClick = { viewModel.deleteDocument(doc) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                if (rowDocs.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                            }
                         }
                     } else {
                         items(
@@ -309,6 +441,8 @@ fun LibraryTtsRoute(
                                 isActiveTts = isActiveTts,
                                 onOpenClick = { onOpenReader(doc.id) },
                                 onListenClick = { viewModel.listenToDocument(doc) },
+                                onMoveCategoryClick = { docForCategoryMove = doc },
+                                onEditTagsClick = { docForTagsEdit = doc },
                                 onLockVaultClick = { viewModel.moveToVault(doc) },
                                 onShareClick = { viewModel.shareDocument(doc) },
                                 onDeleteClick = { viewModel.deleteDocument(doc) }
@@ -319,16 +453,70 @@ fun LibraryTtsRoute(
             }
         }
     }
+
+    if (showCreateCollectionDialog) {
+        CreateCollectionDialog(
+            onConfirm = { name -> viewModel.createCollection(name) },
+            onDismiss = { showCreateCollectionDialog = false }
+        )
+    }
+
+    if (showCreateCategoryDialog) {
+        CreateCategoryDialog(
+            defaultLocked = false,
+            onConfirm = { name, icon, color, locked ->
+                viewModel.createCategory(name, icon, color, locked)
+            },
+            onDismiss = { showCreateCategoryDialog = false }
+        )
+    }
+
+    docForCategoryMove?.let { targetDoc ->
+        MoveToCategoryBottomSheet(
+            categories = uiState.categories,
+            currentCategoryId = targetDoc.categoryId,
+            onSelectCategory = { catId -> viewModel.moveToCategory(targetDoc.id, catId) },
+            onDismiss = { docForCategoryMove = null }
+        )
+    }
+
+    docForTagsEdit?.let { targetDoc ->
+        EditDocumentTagsDialog(
+            documentTitle = targetDoc.title,
+            currentTags = targetDoc.tags,
+            onSaveTags = { newTags -> viewModel.updateDocumentTags(targetDoc.id, newTags) },
+            onDismiss = { docForTagsEdit = null }
+        )
+    }
+
+    pendingImportUri?.let { uri ->
+        CopyOrMoveImportSheet(
+            title = "Import Document",
+            subtitle = "Choose whether to keep the original file or move it into PDF Toolkit.",
+            categories = uiState.categories,
+            defaultCategoryId = uiState.selectedCategoryId,
+            onConfirmCopy = { catId ->
+                viewModel.importDocument(uri, categoryId = catId, deleteOriginal = false)
+            },
+            onConfirmMove = { catId ->
+                viewModel.importDocument(uri, categoryId = catId, deleteOriginal = true)
+            },
+            onDismiss = { pendingImportUri = null }
+        )
+    }
 }
 
 @Composable
 private fun OfflineBadgeCard(
     totalDocs: Int,
+    totalReadMinutes: Int,
     totalTtsMinutes: Int
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = surfaceHairlineBorder(),
+        tonalElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Box(
@@ -361,7 +549,7 @@ private fun OfflineBadgeCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Text(
-                        text = "$totalDocs indexed files • $totalTtsMinutes min listened",
+                        text = "$totalDocs files • $totalReadMinutes min read • $totalTtsMinutes min TTS",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                     )
@@ -390,6 +578,7 @@ private fun CategoryFilterRow(
     selectedCategoryId: String?,
     sortOrder: LibrarySortOrder,
     onSelectCategory: (String?) -> Unit,
+    onCreateCategoryClick: () -> Unit,
     onSelectSort: (LibrarySortOrder) -> Unit
 ) {
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -416,8 +605,24 @@ private fun CategoryFilterRow(
                     onClick = {
                         onSelectCategory(if (selectedCategoryId == category.id) null else category.id)
                     },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = categoryIconForName(category.iconName, category.isLocked),
+                            contentDescription = null,
+                            tint = Color(category.colorHex),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
                     label = { Text(category.name) },
                     modifier = Modifier.testTag("category_chip_${category.id}")
+                )
+            }
+            item(key = "category_add") {
+                AssistChip(
+                    onClick = onCreateCategoryClick,
+                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    label = { Text("Category") },
+                    modifier = Modifier.testTag("library_add_category_chip")
                 )
             }
         }
@@ -471,10 +676,12 @@ private fun EmptyLibraryCard(
     onImportSaf: () -> Unit
 ) {
     Card(
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
@@ -515,6 +722,7 @@ private fun EmptyLibraryCard(
             ) {
                 Button(
                     onClick = onLoadSample,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("load_sample_pdf_button")
@@ -523,6 +731,7 @@ private fun EmptyLibraryCard(
                 }
                 OutlinedButton(
                     onClick = onImportSaf,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("import_saf_empty_button")
@@ -541,24 +750,36 @@ private fun LibraryDocumentCard(
     isActiveTts: Boolean,
     onOpenClick: () -> Unit,
     onListenClick: () -> Unit,
+    onMoveCategoryClick: () -> Unit,
+    onEditTagsClick: () -> Unit,
     onLockVaultClick: () -> Unit,
     onShareClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val cardInteraction = remember { MutableInteractionSource() }
+
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = if (isActiveTts) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
             } else {
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerHigh
             }
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .tactilePressScale(cardInteraction)
+            .clip(MaterialTheme.shapes.large)
             .testTag("library_doc_card_${document.id}")
-            .clickable(onClick = onOpenClick)
+            .clickable(
+                interactionSource = cardInteraction,
+                indication = androidx.compose.material3.ripple(),
+                onClick = onOpenClick
+            )
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -630,6 +851,16 @@ private fun LibraryDocumentCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (document.tags.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = document.tags.joinToString("  ") { "#$it" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             IconButton(
@@ -642,32 +873,40 @@ private fun LibraryDocumentCard(
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            IconButton(
-                onClick = onLockVaultClick,
-                modifier = Modifier.testTag("vault_lock_doc_button_${document.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Lock in Vault"
-                )
-            }
-            IconButton(
-                onClick = onShareClick,
-                modifier = Modifier.testTag("share_doc_button_${document.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = stringResource(R.string.share_document)
-                )
-            }
-            IconButton(
-                onClick = onDeleteClick,
-                modifier = Modifier.testTag("delete_doc_button_${document.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = stringResource(R.string.delete_document)
-                )
+            Box {
+                IconButton(
+                    onClick = { menuOpen = true },
+                    modifier = Modifier.testTag("doc_more_button_${document.id}")
+                ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Move to category") },
+                        leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null) },
+                        onClick = { menuOpen = false; onMoveCategoryClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Edit tags") },
+                        leadingIcon = { Icon(Icons.Default.Label, contentDescription = null) },
+                        onClick = { menuOpen = false; onEditTagsClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Lock in Vault") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        onClick = { menuOpen = false; onLockVaultClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.share_document)) },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        onClick = { menuOpen = false; onShareClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete_document)) },
+                        leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null) },
+                        onClick = { menuOpen = false; onDeleteClick() }
+                    )
+                }
             }
         }
     }
@@ -689,10 +928,12 @@ private fun TtsEngineDeck(
     var sleepMenuExpanded by remember { mutableStateOf(false) }
 
     Card(
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
             .fillMaxWidth()
             .testTag("tts_engine_deck")

@@ -7,63 +7,41 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -78,8 +56,8 @@ import com.example.feature.tools.ToolCatalog
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StandoutToolRoute(
     toolId: String,
@@ -95,9 +73,12 @@ fun StandoutToolRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val libraryDocs by viewModel.libraryDocuments.collectAsStateWithLifecycle()
+    val libraryPdfs = remember(libraryDocs) { libraryDocs.filter { it.mimeType == "application/pdf" } }
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var showCategorySheet by remember { mutableStateOf(false) }
+    val selectedBatchLibraryIds = remember { mutableStateListOf<String>() }
 
     val toolDef = remember(toolId) { ToolCatalog.findById(toolId) }
 
@@ -204,7 +185,7 @@ fun StandoutToolRoute(
     val primaryText = when (state.step) {
         ToolStep.PICK -> when (toolId) {
             "doc_scanner" -> "Start ML Kit Scanner"
-            "batch_tools" -> "Select PDFs"
+            "batch_tools" -> "Select PDFs from Device"
             "id_scanner" -> "Pick Front ID Photo"
             "qr_barcode" -> "Pick QR / Barcode Photo"
             "autoclean_scan" -> "Pick Scan Photos"
@@ -215,12 +196,16 @@ fun StandoutToolRoute(
             "watermark_pages" -> "Apply Watermark & Numbers"
             "compare_pdfs" -> "Generate Comparison Report"
             "workflows" -> "Run Offline Recipe"
-            "batch_tools" -> "Process ${state.batchFiles.size} PDF(s)"
-            "convert_pdf" -> if (state.convertSubMode == ConvertSubMode.PDF_TO_PNG_ZIP) "Export PNG Zip" else "Create PDF"
+            "batch_tools" -> "${state.batchMode.label} ${state.batchFiles.size} PDF(s)"
+            "convert_pdf" -> when (state.convertSubMode) {
+                ConvertSubMode.PDF_TO_PNG_ZIP -> "Export PNG Zip"
+                ConvertSubMode.PDF_TO_TEXT -> "Export Plain Text (.txt)"
+                ConvertSubMode.TEXT_TO_PDF -> "Create PDF"
+            }
             "id_scanner" -> "Create ID Card PDF"
             "qr_barcode" -> "Save Decoded Report PDF"
             "autoclean_scan", "doc_scanner" -> "Build Clean Scan PDF"
-            "translate_pdf" -> "Translate Offline (${state.translateLang.displayName})"
+            "translate_pdf" -> "Translate (${state.sourceLang.displayName} → ${state.translateLang.displayName})"
             else -> "Run"
         }
         ToolStep.PROCESS -> null
@@ -230,8 +215,10 @@ fun StandoutToolRoute(
     val primaryEnabled = when (state.step) {
         ToolStep.CONFIGURE -> when (toolId) {
             "compare_pdfs" -> state.primaryFile != null && state.secondFile != null
-            "batch_tools" -> state.batchFiles.isNotEmpty()
+            "batch_tools" -> state.batchFiles.isNotEmpty() &&
+                (state.batchMode != BatchOperationMode.LOCK_AES256 || state.batchPassword.length >= 4)
             "id_scanner", "autoclean_scan", "doc_scanner" -> state.imageUris.isNotEmpty()
+            "translate_pdf" -> state.sourceLang != state.translateLang
             else -> true
         }
         else -> true
@@ -284,11 +271,61 @@ fun StandoutToolRoute(
                         )
                     }
 
-                    if (toolId in setOf("redact", "watermark_pages", "compare_pdfs", "workflows", "convert_pdf", "translate_pdf") &&
-                        libraryDocs.isNotEmpty()
+                    if (toolId == "batch_tools" && libraryPdfs.isNotEmpty()) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Or multi-select from Library", style = MaterialTheme.typography.titleSmall)
+                                if (selectedBatchLibraryIds.isNotEmpty()) {
+                                    Button(
+                                        onClick = {
+                                            val chosen = libraryPdfs.filter { it.id in selectedBatchLibraryIds }
+                                            viewModel.addLibraryDocsToBatch(chosen)
+                                            selectedBatchLibraryIds.clear()
+                                        },
+                                        modifier = Modifier.testTag("batch_use_selected_library_button")
+                                    ) {
+                                        Text("Queue ${selectedBatchLibraryIds.size}")
+                                    }
+                                }
+                            }
+                        }
+                        items(libraryPdfs, key = { it.id }) { doc ->
+                            val checked = doc.id in selectedBatchLibraryIds
+                            Card(
+                                shape = MaterialTheme.shapes.large,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(MaterialTheme.shapes.large)
+                                    .clickable {
+                                        if (checked) selectedBatchLibraryIds.remove(doc.id)
+                                        else selectedBatchLibraryIds.add(doc.id)
+                                    }
+                            ) {
+                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = {
+                                            if (checked) selectedBatchLibraryIds.remove(doc.id)
+                                            else selectedBatchLibraryIds.add(doc.id)
+                                        }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(doc.title, style = MaterialTheme.typography.titleSmall)
+                                        Text("${doc.pageCount} pages", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    } else if (toolId in setOf("redact", "watermark_pages", "compare_pdfs", "workflows", "convert_pdf", "translate_pdf") &&
+                        libraryPdfs.isNotEmpty()
                     ) {
                         item { Text("Or pick from your Library", style = MaterialTheme.typography.titleSmall) }
-                        items(libraryDocs.filter { it.mimeType == "application/pdf" }, key = { it.id }) { doc ->
+                        items(libraryPdfs, key = { it.id }) { doc ->
                             Card(
                                 shape = MaterialTheme.shapes.large,
                                 modifier = Modifier
@@ -312,293 +349,38 @@ fun StandoutToolRoute(
 
             ToolStep.CONFIGURE -> {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    when (toolId) {
-                        "redact" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("Page ${state.currentPage + 1} of ${state.primaryPageCount}", style = MaterialTheme.typography.titleSmall)
-                                            Row {
-                                                IconButton(
-                                                    onClick = { viewModel.changePreviewPage(state.currentPage - 1) },
-                                                    enabled = state.currentPage > 0
-                                                ) { Icon(Icons.Default.ChevronLeft, contentDescription = "Previous page") }
-                                                IconButton(
-                                                    onClick = { viewModel.changePreviewPage(state.currentPage + 1) },
-                                                    enabled = state.currentPage < state.primaryPageCount - 1
-                                                ) { Icon(Icons.Default.ChevronRight, contentDescription = "Next page") }
-                                            }
-                                        }
-                                        state.previewBitmap?.let { bmp ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .aspectRatio(bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
-                                            ) {
-                                                Image(
-                                                    bitmap = bmp.asImageBitmap(),
-                                                    contentDescription = "Redaction preview",
-                                                    contentScale = ContentScale.FillBounds,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                                    drawRect(
-                                                        color = Color.Black.copy(alpha = 0.85f),
-                                                        topLeft = Offset(state.redactX * size.width, state.redactY * size.height),
-                                                        size = Size(state.redactW * size.width, state.redactH * size.height)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Text("Vertical Position", style = MaterialTheme.typography.labelMedium)
-                                        Slider(
-                                            value = state.redactY,
-                                            onValueChange = { viewModel.updateRedactBox(state.redactX, it, state.redactW, state.redactH, state.redactAllPages, state.scrubDetectedPii) },
-                                            valueRange = 0.02f..0.88f
-                                        )
-                                        Text("Box Width", style = MaterialTheme.typography.labelMedium)
-                                        Slider(
-                                            value = state.redactW,
-                                            onValueChange = { viewModel.updateRedactBox(state.redactX, state.redactY, it, state.redactH, state.redactAllPages, state.scrubDetectedPii) },
-                                            valueRange = 0.15f..0.90f
-                                        )
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Auto-scrub detected PII (${state.piiMatches.size} matches)")
-                                            Switch(
-                                                checked = state.scrubDetectedPii,
-                                                onCheckedChange = { viewModel.updateRedactBox(state.redactX, state.redactY, state.redactW, state.redactH, state.redactAllPages, it) }
-                                            )
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Apply box to all pages")
-                                            Switch(
-                                                checked = state.redactAllPages,
-                                                onCheckedChange = { viewModel.updateRedactBox(state.redactX, state.redactY, state.redactW, state.redactH, it, state.scrubDetectedPii) }
-                                            )
-                                        }
-                                    }
+                    item {
+                        when (toolId) {
+                            "redact" -> RedactConfigPanel(state = state, viewModel = viewModel)
+                            "watermark_pages" -> WatermarkConfigPanel(state = state, viewModel = viewModel)
+                            "compare_pdfs" -> CompareConfigPanel(
+                                state = state,
+                                libraryPdfs = libraryPdfs,
+                                onPickSecondFromSaf = { openSecondPdfLauncher.launch(arrayOf("application/pdf")) },
+                                onPickSecondFromLibrary = viewModel::pickSecondLibraryDoc
+                            )
+                            "workflows" -> WorkflowsConfigPanel(state = state, viewModel = viewModel)
+                            "batch_tools" -> BatchConfigPanel(
+                                state = state,
+                                viewModel = viewModel,
+                                onAddMoreFromSaf = { openBatchPdfsLauncher.launch(arrayOf("application/pdf")) }
+                            )
+                            "convert_pdf" -> ConvertConfigPanel(state = state, viewModel = viewModel)
+                            "id_scanner" -> IdCardConfigPanel(
+                                state = state,
+                                viewModel = viewModel,
+                                onPickBackPhoto = {
+                                    pickBackIdLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
                                 }
-                            }
-                        }
-
-                        "watermark_pages" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        OutlinedTextField(
-                                            value = state.watermarkText,
-                                            onValueChange = { viewModel.updateWatermarkFields(it, state.headerText, state.footerText, state.includePageNumbers) },
-                                            label = { Text("Diagonal Watermark") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        OutlinedTextField(
-                                            value = state.headerText,
-                                            onValueChange = { viewModel.updateWatermarkFields(state.watermarkText, it, state.footerText, state.includePageNumbers) },
-                                            label = { Text("Header Text") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        OutlinedTextField(
-                                            value = state.footerText,
-                                            onValueChange = { viewModel.updateWatermarkFields(state.watermarkText, state.headerText, it, state.includePageNumbers) },
-                                            label = { Text("Footer Text") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Stamp Page X of Y")
-                                            Switch(
-                                                checked = state.includePageNumbers,
-                                                onCheckedChange = { viewModel.updateWatermarkFields(state.watermarkText, state.headerText, state.footerText, it) }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "compare_pdfs" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Document A: ${state.primaryName} (${state.primaryPageCount} pages)", style = MaterialTheme.typography.titleSmall)
-                                        Text(
-                                            text = if (state.secondFile != null) "Document B: ${state.secondName}" else "Document B: Not selected",
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        OutlinedButton(onClick = { openSecondPdfLauncher.launch(arrayOf("application/pdf")) }) {
-                                            Text(if (state.secondFile == null) "Pick Second PDF" else "Change Second PDF")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "workflows" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Offline Recipe: Watermark → Page Numbers → AES-256 Lock", style = MaterialTheme.typography.titleSmall)
-                                        OutlinedTextField(
-                                            value = state.watermarkText,
-                                            onValueChange = { viewModel.updateWorkflowFields(it, state.workflowPassword) },
-                                            label = { Text("Watermark text") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        OutlinedTextField(
-                                            value = state.workflowPassword,
-                                            onValueChange = { viewModel.updateWorkflowFields(state.watermarkText, it) },
-                                            label = { Text("Optional AES-256 password") },
-                                            visualTransformation = PasswordVisualTransformation(),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        "batch_tools" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Batch Queue (${state.batchFiles.size} PDFs)", style = MaterialTheme.typography.titleMedium)
-                                        state.batchFiles.forEach { (_, name) ->
-                                            Text("• $name", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                        OutlinedTextField(
-                                            value = state.watermarkText,
-                                            onValueChange = { viewModel.updateWatermarkFields(it, state.headerText, state.footerText, state.includePageNumbers) },
-                                            label = { Text("Optional Watermark") },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Add Page Numbers")
-                                            Switch(
-                                                checked = state.includePageNumbers,
-                                                onCheckedChange = { viewModel.updateWatermarkFields(state.watermarkText, state.headerText, state.footerText, it) }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "convert_pdf" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                            SegmentedButton(
-                                                selected = state.convertSubMode == ConvertSubMode.PDF_TO_PNG_ZIP,
-                                                onClick = { viewModel.setConvertSubMode(ConvertSubMode.PDF_TO_PNG_ZIP) },
-                                                enabled = state.primaryFile != null,
-                                                shape = SegmentedButtonDefaults.itemShape(0, 2)
-                                            ) { Text("PDF → PNG Zip") }
-                                            SegmentedButton(
-                                                selected = state.convertSubMode == ConvertSubMode.TEXT_TO_PDF,
-                                                onClick = { viewModel.setConvertSubMode(ConvertSubMode.TEXT_TO_PDF) },
-                                                shape = SegmentedButtonDefaults.itemShape(1, 2)
-                                            ) { Text("Text → PDF") }
-                                        }
-                                        if (state.convertSubMode == ConvertSubMode.TEXT_TO_PDF) {
-                                            OutlinedTextField(
-                                                value = state.textToPdfTitle,
-                                                onValueChange = { viewModel.updateTextToPdf(it, state.textToPdfBody) },
-                                                label = { Text("PDF Title") },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            OutlinedTextField(
-                                                value = state.textToPdfBody,
-                                                onValueChange = { viewModel.updateTextToPdf(state.textToPdfTitle, it) },
-                                                label = { Text("Markdown / Plain Text Content") },
-                                                minLines = 6,
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        } else {
-                                            Text("Will export all ${state.primaryPageCount} PDF page(s) as PNG images inside a .zip archive.")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "id_scanner" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Front side selected: ${state.imageUris.size} image", style = MaterialTheme.typography.titleSmall)
-                                        Text(
-                                            text = if (state.backIdUri != null) "Back side selected" else "Back side optional",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                        OutlinedButton(onClick = {
-                                            pickBackIdLauncher.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        }) {
-                                            Text(if (state.backIdUri == null) "Pick Back Side Photo" else "Replace Back Photo")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "qr_barcode" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Decoded Barcodes (${state.decodedBarcodes.size})", style = MaterialTheme.typography.titleMedium)
-                                        if (state.decodedBarcodes.isEmpty()) {
-                                            Text("No QR or barcode found in selected photo.")
-                                        } else {
-                                            state.decodedBarcodes.forEach { bc ->
-                                                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                                                    Column(modifier = Modifier.padding(10.dp)) {
-                                                        Text(bc.displayType, style = MaterialTheme.typography.labelLarge)
-                                                        Text(bc.rawValue, style = MaterialTheme.typography.bodySmall)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        "autoclean_scan", "doc_scanner" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("${state.imageUris.size} scan page(s) ready", style = MaterialTheme.typography.titleMedium)
-                                        Text(
-                                            "Auto-Clean applies grayscale contrast boost and shadow whitening locally before packaging into A4 PDF.",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        "translate_pdf" -> {
-                            item {
-                                Card(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
-                                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Text("Select On-Device Target Language", style = MaterialTheme.typography.titleMedium)
-                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            TranslateTargetLang.entries.forEach { lang ->
-                                                FilterChip(
-                                                    selected = state.translateLang == lang,
-                                                    onClick = { viewModel.setTranslateTarget(lang) },
-                                                    label = { Text(lang.displayName) }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            )
+                            "qr_barcode" -> QrBarcodeConfigPanel(
+                                state = state,
+                                onCopiedMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                            )
+                            "autoclean_scan", "doc_scanner" -> ScanCleanConfigPanel(state = state, viewModel = viewModel)
+                            "translate_pdf" -> TranslateConfigPanel(state = state, viewModel = viewModel)
                         }
                     }
                 }
@@ -613,18 +395,25 @@ fun StandoutToolRoute(
 
             ToolStep.DONE -> {
                 val outName = state.outputFile?.name ?: "Output"
-                ToolDoneCard(
-                    title = "${toolDef?.title ?: "Task"} complete",
-                    summaryText = "$outName generated offline on your device.",
-                    metrics = state.summaryMetrics,
-                    onOpen = {
-                        val docId = state.savedLibraryDocId
-                        if (docId != null) onOpenReader(docId) else onOpenLibrary()
-                    },
-                    onShare = viewModel::shareOutput,
-                    onSaveAs = { saveAsLauncher.launch(outName) },
-                    onSaveToCategory = { showCategorySheet = true }
-                )
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        ToolDoneCard(
+                            title = "${toolDef?.title ?: "Task"} complete",
+                            summaryText = "$outName generated offline on your device.",
+                            metrics = state.summaryMetrics,
+                            onOpen = {
+                                val docId = state.savedLibraryDocId
+                                if (docId != null) onOpenReader(docId) else onOpenLibrary()
+                            },
+                            onShare = viewModel::shareOutput,
+                            onSaveAs = { saveAsLauncher.launch(outName) },
+                            onSaveToCategory = { showCategorySheet = true }
+                        )
+                    }
+                    if (toolId == "compare_pdfs" && state.compareDiff != null) {
+                        item { CompareDiffSummaryCard(diff = state.compareDiff!!) }
+                    }
+                }
             }
         }
     }

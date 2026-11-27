@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.ui.theme.surfaceHairlineBorder
 
 @Composable
 fun RunsOnDeviceBadge(
@@ -30,7 +31,8 @@ fun RunsOnDeviceBadge(
 ) {
     Surface(
         shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.85f),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f),
+        border = surfaceHairlineBorder(),
         modifier = modifier.semantics(mergeDescendants = true) {}
     ) {
         Row(
@@ -58,13 +60,14 @@ fun MetricPill(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
     icon: ImageVector? = null
 ) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         color = containerColor,
+        border = surfaceHairlineBorder(),
         modifier = modifier.semantics(mergeDescendants = true) {}
     ) {
         Row(
@@ -83,7 +86,7 @@ fun MetricPill(
             Text(
                 text = "$label: ",
                 style = MaterialTheme.typography.labelSmall,
-                color = contentColor.copy(alpha = 0.8f)
+                color = contentColor.copy(alpha = 0.72f)
             )
             Text(
                 text = value,

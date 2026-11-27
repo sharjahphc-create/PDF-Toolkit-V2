@@ -171,6 +171,38 @@ interface LibraryDao {
     )
     suspend fun setDocumentLocked(documentId: String, isLocked: Boolean, updatedAt: Long, deviceId: String)
 
+    @Query(
+        """
+        UPDATE categories
+        SET is_deleted = 1, updated_at = :updatedAt, device_id = :deviceId
+        WHERE id = :categoryId AND is_system_default = 0
+        """
+    )
+    suspend fun softDeleteCategory(categoryId: String, updatedAt: Long, deviceId: String)
+
+    @Query(
+        """
+        UPDATE categories
+        SET is_locked = :isLocked, updated_at = :updatedAt, device_id = :deviceId
+        WHERE id = :categoryId
+        """
+    )
+    suspend fun setCategoryLocked(categoryId: String, isLocked: Boolean, updatedAt: Long, deviceId: String)
+
+    @Query(
+        """
+        UPDATE library_documents
+        SET tags_json = :tagsJson, updated_at = :updatedAt, device_id = :deviceId
+        WHERE id = :documentId
+        """
+    )
+    suspend fun updateDocumentTags(
+        documentId: String,
+        tagsJson: String,
+        updatedAt: Long,
+        deviceId: String
+    )
+
     @Query("SELECT * FROM categories WHERE is_deleted = 0")
     suspend fun getAllCategoriesSync(): List<CategoryEntity>
 
@@ -185,4 +217,12 @@ interface LibraryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addDocumentToCollection(crossRef: DocumentCollectionCrossRef)
+
+    @Query(
+        """
+        SELECT document_id FROM document_collection_cross_ref
+        WHERE collection_id = :collectionId AND is_deleted = 0
+        """
+    )
+    fun observeDocumentIdsInCollection(collectionId: String): Flow<List<String>>
 }

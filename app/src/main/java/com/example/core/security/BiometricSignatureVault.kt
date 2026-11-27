@@ -46,7 +46,11 @@ class BiometricSignatureVault @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val vaultDir: File
-        get() = File(context.filesDir, "signature_vault").apply { mkdirs() }
+        get() = File(context.filesDir, "signature_vault").apply {
+            mkdirs()
+            val noMedia = File(this, ".nomedia")
+            if (!noMedia.exists()) noMedia.createNewFile()
+        }
 
     private val indexFile: File
         get() = File(vaultDir, "index.json")
@@ -134,6 +138,18 @@ class BiometricSignatureVault @Inject constructor(
                 VaultSignatureEntry(meta, plain)
             }.getOrNull()
         }
+    }
+
+    suspend fun restoreSignature(
+        metadata: VaultSignatureMetadata,
+        pngBytes: ByteArray
+    ) = withContext(ioDispatcher) {
+        val safeId = metadata.id.replace(Regex("[^A-Za-z0-9_-]"), "")
+        if (safeId.isBlank()) return@withContext
+        val encrypted = encryptBytes(pngBytes)
+        File(vaultDir, "$safeId.sig").writeBytes(encrypted)
+        val existing = readIndex().filterNot { it.id == safeId }
+        writeIndex(existing + metadata.copy(id = safeId))
     }
 
     suspend fun deleteEntry(id: String) = withContext(ioDispatcher) {

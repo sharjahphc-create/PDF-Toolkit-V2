@@ -3,6 +3,7 @@ package com.example.data.repository
 import android.net.Uri
 import com.example.domain.model.Bookmark
 import com.example.domain.model.DocumentCategory
+import com.example.domain.model.DocumentCollection
 import com.example.domain.model.Highlight
 import com.example.domain.model.LibraryDocument
 import com.example.domain.model.LibrarySortOrder
@@ -10,8 +11,16 @@ import com.example.domain.model.ReadingProgress
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
+data class ImportDocumentResult(
+    val document: LibraryDocument,
+    val originalDeleted: Boolean
+)
+
 interface LibraryRepository {
     fun observeCategories(): Flow<List<DocumentCategory>>
+    fun observeCollections(): Flow<List<DocumentCollection>>
+    fun observeDocumentIdsInCollection(collectionId: String): Flow<List<String>>
+    fun observeAllReadingProgress(): Flow<List<ReadingProgress>>
     fun observeDocuments(
         query: String = "",
         categoryId: String? = null,
@@ -29,7 +38,23 @@ interface LibraryRepository {
     fun observeTotalMinutesRead(): Flow<Int>
 
     suspend fun getDocumentById(documentId: String): LibraryDocument?
+    suspend fun createCategory(
+        name: String,
+        iconName: String,
+        colorHex: Long,
+        isLocked: Boolean
+    ): DocumentCategory
+    suspend fun softDeleteCategory(categoryId: String)
+    suspend fun updateDocumentTags(documentId: String, tags: List<String>)
+    suspend fun createCollection(name: String, description: String = ""): DocumentCollection
+    suspend fun addDocumentToCollection(documentId: String, collectionId: String)
     suspend fun importFromUri(uri: Uri, categoryId: String? = null): Result<LibraryDocument>
+    suspend fun importFromUriWithMode(
+        uri: Uri,
+        categoryId: String? = null,
+        deleteOriginal: Boolean = false,
+        lockInVault: Boolean = false
+    ): Result<ImportDocumentResult>
     suspend fun importLocalFile(
         file: File,
         displayName: String,
@@ -49,10 +74,13 @@ interface LibraryRepository {
     suspend fun softDeleteHighlight(highlightId: String)
     suspend fun updateDocumentTitle(documentId: String, newTitle: String)
     suspend fun moveToCategory(documentId: String, categoryId: String?)
-    suspend fun moveDocumentToVault(documentId: String): Result<Unit>
+    suspend fun moveDocumentToVault(documentId: String, targetCategoryId: String? = null): Result<Unit>
     suspend fun unlockDocumentFromVault(documentId: String, targetCategoryId: String? = null): Result<Unit>
     suspend fun openVaultDecryptedCopy(document: LibraryDocument): Result<File>
-    suspend fun exportEncryptedBackup(passphrase: String): Result<ByteArray>
+    suspend fun exportEncryptedBackup(
+        passphrase: String,
+        includeVaultFiles: Boolean = true
+    ): Result<ByteArray>
     suspend fun restoreEncryptedBackup(encryptedBytes: ByteArray, passphrase: String): Result<Int>
     suspend fun softDeleteDocument(documentId: String)
     suspend fun restoreDocument(documentId: String)

@@ -2,19 +2,19 @@ package com.example.data.repository
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import com.example.R
 import com.example.core.common.IoDispatcher
 import com.example.core.database.dao.LibraryDao
-import com.example.core.database.dao.NoteDao
 import com.example.core.database.dao.ReaderDao
 import com.example.core.database.entity.BookmarkEntity
 import com.example.core.database.entity.CategoryEntity
+import com.example.core.database.entity.CollectionEntity
+import com.example.core.database.entity.DocumentCollectionCrossRef
 import com.example.core.database.entity.HighlightEntity
 import com.example.core.database.entity.LibraryDocumentEntity
-import com.example.core.database.entity.NoteEntity
-import com.example.core.database.entity.NoteType
 import com.example.core.database.entity.ReadingProgressEntity
 import com.example.core.database.entity.ReadingStatsEntity
 import com.example.core.datastore.PreferencesRepository
@@ -22,11 +22,13 @@ import com.example.core.security.VaultCryptoManager
 import com.example.data.pdf.PdfTextExtractor
 import com.example.domain.model.Bookmark
 import com.example.domain.model.DocumentCategory
+import com.example.domain.model.DocumentCollection
 import com.example.domain.model.Highlight
 import com.example.domain.model.LibraryDocument
 import com.example.domain.model.LibrarySortOrder
 import com.example.domain.model.ReadingProgress
 import com.example.feature.reader.EpubParser
+import com.example.system.PdfToolkitGlanceWidget
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -35,16 +37,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.apache.poi.xwpf.usermodel.XWPFDocument
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDate
 import java.util.UUID
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,11 +50,11 @@ class LibraryRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val libraryDao: LibraryDao,
     private val readerDao: ReaderDao,
-    private val noteDao: NoteDao,
     private val preferencesRepository: PreferencesRepository,
     private val pdfTextExtractor: PdfTextExtractor,
     private val epubParser: EpubParser,
     private val vaultCryptoManager: VaultCryptoManager,
+    private val encryptedBackupManager: EncryptedBackupManager,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) : LibraryRepository {
 
@@ -65,6 +62,15 @@ class LibraryRepositoryImpl @Inject constructor(
 
     override fun observeCategories(): Flow<List<DocumentCategory>> =
         libraryDao.observeCategories().map { list -> list.map { it.toDomain() } }
+
+    override fun observeCollections(): Flow<List<DocumentCollection>> =
+        libraryDao.observeCollections().map { list -> list.map { it.toDomain() } }
+
+    override fun observeDocumentIdsInCollection(collectionId: String): Flow<List<String>> =
+        libraryDao.observeDocumentIdsInCollection(collectionId)
+
+    override fun observeAllReadingProgress(): Flow<List<ReadingProgress>> =
+        readerDao.observeAllProgress().map { list -> list.map { it.toDomain() } }
 
     override fun observeDocuments(
         query: String,
@@ -128,10 +134,94 @@ class LibraryRepositoryImpl @Inject constructor(
     override suspend fun getDocumentById(documentId: String): LibraryDocument? =
         withContext(ioDispatcher) { libraryDao.getDocumentById(documentId)?.toDomain() }
 
+    override suspend fun createCategory(
+        name: String,
+        iconName: String,
+        colorHex: Long,
+        isLocked: Boolean
+    ): DocumentCategory = withContext(ioDispatcher) {
+        val deviceId = preferencesRepository.getOrCreateDeviceId()
+        val now = System.currentTimeMillis()
+        val existingCount = libraryDao.getAllCategoriesSync().size
+        val entity = CategoryEntity(
+            id = "cat_${UUID.randomUUID()}",
+            name = name.trim(),
+            iconName = iconName.ifBlank { if (isLocked) "lock" else "folder" },
+            colorHex = colorHex,
+            isLocked = isLocked,
+            isSystemDefault = false,
+            sortOrder = existingCount + 1,
+            updatedAt = now,
+            deviceId = deviceId,
+            isDeleted = false
+        )
+        libraryDao.upsertCategory(entity)
+        entity.toDomain()
+    }
+
+    override suspend fun softDeleteCategory(categoryId: String) = withContext(ioDispatcher) {
+        val deviceId = preferencesRepository.getOrCreateDeviceId()
+        libraryDao.softDeleteCategory(categoryId, System.currentTimeMillis(), deviceId)
+    }
+
+    override suspend fun updateDocumentTags(documentId: String, tags: List<String>) =
+        withContext(ioDispatcher) {
+            val cleaned = tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            val deviceId = preferencesRepository.getOrCreateDeviceId()
+            libraryDao.updateDocumentTags(
+                documentId = documentId,
+                tagsJson = json.encodeToString(cleaned),
+                updatedAt = System.currentTimeMillis(),
+                deviceId = deviceId
+            )
+        }
+
+    override suspend fun createCollection(name: String, description: String): DocumentCollection =
+        withContext(ioDispatcher) {
+            val deviceId = preferencesRepository.getOrCreateDeviceId()
+            val now = System.currentTimeMillis()
+            val entity = CollectionEntity(
+                id = UUID.randomUUID().toString(),
+                name = name.trim(),
+                description = description.trim(),
+                updatedAt = now,
+                deviceId = deviceId,
+                isDeleted = false
+            )
+            libraryDao.upsertCollection(entity)
+            entity.toDomain()
+        }
+
+    override suspend fun addDocumentToCollection(documentId: String, collectionId: String) =
+        withContext(ioDispatcher) {
+            val deviceId = preferencesRepository.getOrCreateDeviceId()
+            libraryDao.addDocumentToCollection(
+                DocumentCollectionCrossRef(
+                    documentId = documentId,
+                    collectionId = collectionId,
+                    updatedAt = System.currentTimeMillis(),
+                    deviceId = deviceId,
+                    isDeleted = false
+                )
+            )
+        }
+
     override suspend fun importFromUri(
         uri: Uri,
         categoryId: String?
-    ): Result<LibraryDocument> = withContext(ioDispatcher) {
+    ): Result<LibraryDocument> = importFromUriWithMode(
+        uri = uri,
+        categoryId = categoryId,
+        deleteOriginal = false,
+        lockInVault = false
+    ).map { it.document }
+
+    override suspend fun importFromUriWithMode(
+        uri: Uri,
+        categoryId: String?,
+        deleteOriginal: Boolean,
+        lockInVault: Boolean
+    ): Result<ImportDocumentResult> = withContext(ioDispatcher) {
         runCatching {
             val resolver = context.contentResolver
             var displayName = "Document_${System.currentTimeMillis()}"
@@ -160,7 +250,11 @@ class LibraryRepositoryImpl @Inject constructor(
                 ?: inferMimeType(displayName)
             val ext = inferExtension(displayName, mimeType)
             val docId = UUID.randomUUID().toString()
-            val libraryDir = File(context.filesDir, "library").apply { mkdirs() }
+            val libraryDir = File(context.filesDir, "library").apply {
+                mkdirs()
+                val noMedia = File(this, ".nomedia")
+                if (!noMedia.exists()) noMedia.createNewFile()
+            }
             val destFile = File(libraryDir, "$docId.$ext")
 
             resolver.openInputStream(uri)?.use { input ->
@@ -175,15 +269,25 @@ class LibraryRepositoryImpl @Inject constructor(
             } ?: error("Unable to open document stream from Storage Access Framework")
 
             val actualSize = destFile.length().takeIf { it > 0 } ?: reportedSize
-            persistLocalFile(
+            val doc = persistLocalFile(
                 docId = docId,
                 destFile = destFile,
                 fileName = displayName,
                 mimeType = mimeType,
                 sourceUri = uri.toString(),
                 fileSizeBytes = actualSize,
-                categoryId = categoryId
+                categoryId = categoryId,
+                forceLockInVault = lockInVault
             )
+
+            val deletedOriginal = if (deleteOriginal) {
+                runCatching {
+                    DocumentsContract.deleteDocument(resolver, uri)
+                }.getOrDefault(false)
+            } else {
+                false
+            }
+            ImportDocumentResult(document = doc, originalDeleted = deletedOriginal)
         }
     }
 
@@ -243,7 +347,8 @@ class LibraryRepositoryImpl @Inject constructor(
         mimeType: String,
         sourceUri: String?,
         fileSizeBytes: Long,
-        categoryId: String?
+        categoryId: String?,
+        forceLockInVault: Boolean = false
     ): LibraryDocument {
         val deviceId = preferencesRepository.getOrCreateDeviceId()
         val now = System.currentTimeMillis()
@@ -279,6 +384,20 @@ class LibraryRepositoryImpl @Inject constructor(
         val cleanTitle = extractedTitle?.takeIf { it.isNotBlank() }
             ?: fileName.substringBeforeLast('.').replace('_', ' ')
         val isCategoryLocked = categoryId?.let { libraryDao.getCategoryById(it)?.isLocked } ?: false
+        val shouldLock = forceLockInVault || isCategoryLocked
+
+        val finalPath: String
+        val finalThumbnailPath: String?
+        if (shouldLock) {
+            val encryptedFile = vaultCryptoManager.encryptFileToVault(destFile, docId).getOrThrow()
+            destFile.delete()
+            thumbnailPath?.let { File(it).delete() }
+            finalPath = encryptedFile.absolutePath
+            finalThumbnailPath = null
+        } else {
+            finalPath = destFile.absolutePath
+            finalThumbnailPath = thumbnailPath
+        }
 
         val entity = LibraryDocumentEntity(
             id = docId,
@@ -286,14 +405,14 @@ class LibraryRepositoryImpl @Inject constructor(
             fileName = fileName,
             mimeType = mimeType,
             sourceUri = sourceUri,
-            localCachePath = destFile.absolutePath,
+            localCachePath = finalPath,
             pageCount = pageCount,
             fileSizeBytes = fileSizeBytes,
             categoryId = categoryId,
             tagsJson = json.encodeToString(emptyList<String>()),
             ocrText = ocrText,
-            thumbnailPath = thumbnailPath,
-            isLocked = isCategoryLocked,
+            thumbnailPath = finalThumbnailPath,
+            isLocked = shouldLock,
             isFavorite = false,
             lastOpenedAt = now,
             createdAt = now,
@@ -302,6 +421,7 @@ class LibraryRepositoryImpl @Inject constructor(
             isDeleted = false
         )
         libraryDao.upsertDocument(entity)
+        PdfToolkitGlanceWidget.requestUpdate(context)
         return entity.toDomain()
     }
 
@@ -494,18 +614,32 @@ class LibraryRepositoryImpl @Inject constructor(
         }
 
     override suspend fun moveToCategory(documentId: String, categoryId: String?) = withContext(ioDispatcher) {
-        val deviceId = preferencesRepository.getOrCreateDeviceId()
-        val isLocked = categoryId?.let { libraryDao.getCategoryById(it)?.isLocked } ?: false
-        libraryDao.moveDocumentToCategory(
-            documentId = documentId,
-            categoryId = categoryId,
-            isLocked = isLocked,
-            updatedAt = System.currentTimeMillis(),
-            deviceId = deviceId
-        )
+        val doc = libraryDao.getDocumentById(documentId) ?: return@withContext
+        val targetLocked = categoryId?.let { libraryDao.getCategoryById(it)?.isLocked } ?: false
+        when {
+            targetLocked && !doc.isLocked -> {
+                moveDocumentToVault(documentId, targetCategoryId = categoryId)
+            }
+            !targetLocked && doc.isLocked -> {
+                unlockDocumentFromVault(documentId, targetCategoryId = categoryId)
+            }
+            else -> {
+                val deviceId = preferencesRepository.getOrCreateDeviceId()
+                libraryDao.moveDocumentToCategory(
+                    documentId = documentId,
+                    categoryId = categoryId,
+                    isLocked = doc.isLocked,
+                    updatedAt = System.currentTimeMillis(),
+                    deviceId = deviceId
+                )
+            }
+        }
     }
 
-    override suspend fun moveDocumentToVault(documentId: String): Result<Unit> =
+    override suspend fun moveDocumentToVault(
+        documentId: String,
+        targetCategoryId: String?
+    ): Result<Unit> =
         withContext(ioDispatcher) {
             runCatching {
                 val doc = libraryDao.getDocumentById(documentId) ?: error("Document not found")
@@ -518,10 +652,13 @@ class LibraryRepositoryImpl @Inject constructor(
                     source.delete()
                     enc
                 }
+                doc.thumbnailPath?.let { File(it).delete() }
                 val deviceId = preferencesRepository.getOrCreateDeviceId()
                 libraryDao.upsertDocument(
                     doc.copy(
                         localCachePath = encryptedFile.absolutePath,
+                        categoryId = targetCategoryId ?: doc.categoryId,
+                        thumbnailPath = null,
                         isLocked = true,
                         updatedAt = System.currentTimeMillis(),
                         deviceId = deviceId
@@ -538,7 +675,11 @@ class LibraryRepositoryImpl @Inject constructor(
             val doc = libraryDao.getDocumentById(documentId) ?: error("Document not found")
             val currentFile = File(doc.localCachePath)
             val ext = inferExtension(doc.fileName, doc.mimeType)
-            val libraryDir = File(context.filesDir, "library").apply { mkdirs() }
+            val libraryDir = File(context.filesDir, "library").apply {
+                mkdirs()
+                val noMedia = File(this, ".nomedia")
+                if (!noMedia.exists()) noMedia.createNewFile()
+            }
             val restoredFile = File(libraryDir, "${doc.id}.$ext")
             if (currentFile.exists() && currentFile.name.endsWith(".enc")) {
                 vaultCryptoManager.decryptVaultFileToTemp(currentFile, restoredFile).getOrThrow()
@@ -573,254 +714,15 @@ class LibraryRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun exportEncryptedBackup(passphrase: String): Result<ByteArray> =
-        withContext(ioDispatcher) {
-            runCatching {
-                val categories = libraryDao.getAllCategoriesSync()
-                val documents = libraryDao.getAllDocumentsSync()
-                val bookmarks = readerDao.getAllBookmarksSync()
-                val highlights = readerDao.getAllHighlightsSync()
-                val notes = noteDao.getAllNotesSync()
-
-                val docRecords = mutableListOf<BackupDocumentRecord>()
-                val zipBytes = ByteArrayOutputStream().use { baos ->
-                    ZipOutputStream(baos).use { zos ->
-                        for (doc in documents) {
-                            val file = File(doc.localCachePath)
-                            val entryName = "files/${doc.id}_${file.name}"
-                            if (file.exists()) {
-                                zos.putNextEntry(ZipEntry(entryName))
-                                file.inputStream().use { it.copyTo(zos) }
-                                zos.closeEntry()
-                            }
-                            docRecords.add(
-                                BackupDocumentRecord(
-                                    id = doc.id,
-                                    title = doc.title,
-                                    fileName = doc.fileName,
-                                    mimeType = doc.mimeType,
-                                    sourceUri = doc.sourceUri,
-                                    pageCount = doc.pageCount,
-                                    fileSizeBytes = doc.fileSizeBytes,
-                                    categoryId = doc.categoryId,
-                                    tagsJson = doc.tagsJson,
-                                    ocrText = doc.ocrText,
-                                    isLocked = doc.isLocked,
-                                    isFavorite = doc.isFavorite,
-                                    lastOpenedAt = doc.lastOpenedAt,
-                                    createdAt = doc.createdAt,
-                                    updatedAt = doc.updatedAt,
-                                    deviceId = doc.deviceId,
-                                    archiveEntryName = entryName
-                                )
-                            )
-                        }
-
-                        val manifest = BackupManifest(
-                            exportedAt = System.currentTimeMillis(),
-                            categories = categories.map {
-                                BackupCategoryRecord(
-                                    id = it.id,
-                                    name = it.name,
-                                    iconName = it.iconName,
-                                    colorHex = it.colorHex,
-                                    isLocked = it.isLocked,
-                                    isSystemDefault = it.isSystemDefault,
-                                    sortOrder = it.sortOrder,
-                                    updatedAt = it.updatedAt,
-                                    deviceId = it.deviceId
-                                )
-                            },
-                            documents = docRecords,
-                            bookmarks = bookmarks.map {
-                                BackupBookmarkRecord(
-                                    id = it.id,
-                                    documentId = it.documentId,
-                                    pageNumber = it.pageNumber,
-                                    label = it.label,
-                                    excerpt = it.excerpt,
-                                    createdAt = it.createdAt,
-                                    updatedAt = it.updatedAt,
-                                    deviceId = it.deviceId
-                                )
-                            },
-                            highlights = highlights.map {
-                                BackupHighlightRecord(
-                                    id = it.id,
-                                    documentId = it.documentId,
-                                    pageNumber = it.pageNumber,
-                                    colorKey = it.colorKey,
-                                    quotedText = it.quotedText,
-                                    noteText = it.noteText,
-                                    rectsJson = it.rectsJson,
-                                    createdAt = it.createdAt,
-                                    updatedAt = it.updatedAt,
-                                    deviceId = it.deviceId
-                                )
-                            },
-                            notes = notes.map {
-                                BackupNoteRecord(
-                                    id = it.id,
-                                    title = it.title,
-                                    content = it.content,
-                                    noteType = it.noteType.name,
-                                    checklistJson = it.checklistJson,
-                                    isPinned = it.isPinned,
-                                    colorKey = it.colorKey,
-                                    createdAt = it.createdAt,
-                                    updatedAt = it.updatedAt,
-                                    deviceId = it.deviceId
-                                )
-                            }
-                        )
-                        zos.putNextEntry(ZipEntry("manifest.json"))
-                        zos.write(json.encodeToString(manifest).toByteArray(Charsets.UTF_8))
-                        zos.closeEntry()
-                    }
-                    baos.toByteArray()
-                }
-                vaultCryptoManager.encryptBackupBytes(zipBytes, passphrase)
-            }
-        }
+    override suspend fun exportEncryptedBackup(
+        passphrase: String,
+        includeVaultFiles: Boolean
+    ): Result<ByteArray> = encryptedBackupManager.exportEncryptedBackup(passphrase, includeVaultFiles)
 
     override suspend fun restoreEncryptedBackup(
         encryptedBytes: ByteArray,
         passphrase: String
-    ): Result<Int> = withContext(ioDispatcher) {
-        runCatching {
-            val zipBytes = vaultCryptoManager.decryptBackupBytes(encryptedBytes, passphrase).getOrThrow()
-            var manifest: BackupManifest? = null
-            val restoredFiles = mutableMapOf<String, ByteArray>()
-
-            ZipInputStream(ByteArrayInputStream(zipBytes)).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val data = zis.readBytes()
-                    if (entry.name == "manifest.json") {
-                        manifest = json.decodeFromString<BackupManifest>(data.toString(Charsets.UTF_8))
-                    } else if (entry.name.startsWith("files/")) {
-                        restoredFiles[entry.name] = data
-                    }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
-            }
-
-            val parsed = manifest ?: error("Missing manifest.json in backup")
-            parsed.categories.forEach { cat ->
-                libraryDao.upsertCategory(
-                    CategoryEntity(
-                        id = cat.id,
-                        name = cat.name,
-                        iconName = cat.iconName,
-                        colorHex = cat.colorHex,
-                        isLocked = cat.isLocked,
-                        isSystemDefault = cat.isSystemDefault,
-                        sortOrder = cat.sortOrder,
-                        updatedAt = cat.updatedAt,
-                        deviceId = cat.deviceId,
-                        isDeleted = false
-                    )
-                )
-            }
-
-            val libraryDir = File(context.filesDir, "library").apply { mkdirs() }
-            val vaultDir = File(context.filesDir, "vault").apply { mkdirs() }
-            var restoredCount = 0
-
-            parsed.documents.forEach { doc ->
-                val payload = restoredFiles[doc.archiveEntryName]
-                val ext = inferExtension(doc.fileName, doc.mimeType)
-                val targetFile = if (doc.isLocked && doc.archiveEntryName.endsWith(".enc")) {
-                    File(vaultDir, "${doc.id}.enc")
-                } else {
-                    File(libraryDir, "${doc.id}.$ext")
-                }
-                if (payload != null) {
-                    targetFile.writeBytes(payload)
-                }
-                libraryDao.upsertDocument(
-                    LibraryDocumentEntity(
-                        id = doc.id,
-                        title = doc.title,
-                        fileName = doc.fileName,
-                        mimeType = doc.mimeType,
-                        sourceUri = doc.sourceUri,
-                        localCachePath = targetFile.absolutePath,
-                        pageCount = doc.pageCount,
-                        fileSizeBytes = doc.fileSizeBytes,
-                        categoryId = doc.categoryId,
-                        tagsJson = doc.tagsJson,
-                        ocrText = doc.ocrText,
-                        thumbnailPath = null,
-                        isLocked = doc.isLocked,
-                        isFavorite = doc.isFavorite,
-                        lastOpenedAt = doc.lastOpenedAt,
-                        createdAt = doc.createdAt,
-                        updatedAt = doc.updatedAt,
-                        deviceId = doc.deviceId,
-                        isDeleted = false
-                    )
-                )
-                restoredCount++
-            }
-
-            parsed.bookmarks.forEach { bm ->
-                readerDao.upsertBookmark(
-                    BookmarkEntity(
-                        id = bm.id,
-                        documentId = bm.documentId,
-                        pageNumber = bm.pageNumber,
-                        label = bm.label,
-                        excerpt = bm.excerpt,
-                        createdAt = bm.createdAt,
-                        updatedAt = bm.updatedAt,
-                        deviceId = bm.deviceId,
-                        isDeleted = false
-                    )
-                )
-            }
-
-            parsed.highlights.forEach { hl ->
-                readerDao.upsertHighlight(
-                    HighlightEntity(
-                        id = hl.id,
-                        documentId = hl.documentId,
-                        pageNumber = hl.pageNumber,
-                        colorKey = hl.colorKey,
-                        quotedText = hl.quotedText,
-                        noteText = hl.noteText,
-                        rectsJson = hl.rectsJson,
-                        createdAt = hl.createdAt,
-                        updatedAt = hl.updatedAt,
-                        deviceId = hl.deviceId,
-                        isDeleted = false
-                    )
-                )
-            }
-
-            parsed.notes.forEach { note ->
-                noteDao.upsertNote(
-                    NoteEntity(
-                        id = note.id,
-                        title = note.title,
-                        content = note.content,
-                        noteType = runCatching { NoteType.valueOf(note.noteType) }.getOrDefault(NoteType.TEXT),
-                        checklistJson = note.checklistJson,
-                        isPinned = note.isPinned,
-                        colorKey = note.colorKey,
-                        createdAt = note.createdAt,
-                        updatedAt = note.updatedAt,
-                        deviceId = note.deviceId,
-                        isDeleted = false
-                    )
-                )
-                restoredCount++
-            }
-
-            restoredCount
-        }
-    }
+    ): Result<Int> = encryptedBackupManager.restoreEncryptedBackup(encryptedBytes, passphrase)
 
     override suspend fun softDeleteDocument(documentId: String) = withContext(ioDispatcher) {
         val deviceId = preferencesRepository.getOrCreateDeviceId()
@@ -889,6 +791,13 @@ class LibraryRepositoryImpl @Inject constructor(
         isLocked = isLocked,
         isSystemDefault = isSystemDefault,
         sortOrder = sortOrder
+    )
+
+    private fun CollectionEntity.toDomain() = DocumentCollection(
+        id = id,
+        name = name,
+        description = description,
+        updatedAt = updatedAt
     )
 
     private fun LibraryDocumentEntity.toDomain(): LibraryDocument {

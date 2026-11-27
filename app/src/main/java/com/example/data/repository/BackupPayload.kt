@@ -77,12 +77,44 @@ data class BackupNoteRecord(
 )
 
 @Serializable
+data class BackupSignatureRecord(
+    val id: String,
+    val label: String,
+    val kind: String,
+    val createdAt: Long,
+    val archiveEntryName: String
+)
+
+@Serializable
+data class BackupSettingsRecord(
+    val themeMode: String = "SYSTEM",
+    val dynamicColor: Boolean = true,
+    val highContrast: Boolean = false,
+    val reduceMotion: Boolean = false,
+    val toolsViewMode: String = "GRID_2",
+    val toolsSortMode: String = "DEFAULT",
+    val libraryViewMode: String = "COVERS_GRID",
+    val ttsSpeechRate: Float = 1.0f,
+    val ttsPitch: Float = 1.0f,
+    val ttsDefaultSleepMinutes: Int = 0,
+    val hideLockedThumbnails: Boolean = true,
+    val vaultAutoLockMinutes: Int = 1,
+    val readerTheme: String = "PAPER",
+    val readerFontChoice: String = "SERIF",
+    val readerFontScale: Float = 1.0f,
+    val appLocaleTag: String = ""
+)
+
+@Serializable
 data class BackupManifest(
-    val version: Int = 1,
+    val version: Int = 2,
     val exportedAt: Long,
+    val includesVaultFiles: Boolean = true,
     val categories: List<BackupCategoryRecord>,
     val documents: List<BackupDocumentRecord>,
     val bookmarks: List<BackupBookmarkRecord>,
     val highlights: List<BackupHighlightRecord>,
-    val notes: List<BackupNoteRecord>
+    val notes: List<BackupNoteRecord>,
+    val signatures: List<BackupSignatureRecord> = emptyList(),
+    val settings: BackupSettingsRecord? = null
 )

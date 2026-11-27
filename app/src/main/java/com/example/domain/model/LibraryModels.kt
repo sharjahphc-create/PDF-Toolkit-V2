@@ -63,3 +63,10 @@ data class Highlight(
     val noteText: String,
     val createdAt: Long
 )
+
+data class DocumentCollection(
+    val id: String,
+    val name: String,
+    val description: String,
+    val updatedAt: Long
+)

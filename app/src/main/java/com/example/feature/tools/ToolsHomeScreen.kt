@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -53,8 +55,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -101,9 +105,12 @@ import com.example.core.ui.components.EmptyStateView
 import com.example.core.ui.components.RunsOnDeviceBadge
 import com.example.core.ui.components.ToolCard
 import com.example.domain.model.LibraryDocument
+import com.example.ui.theme.LocalHairlineBorderColor
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.colors
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -163,9 +170,29 @@ fun ToolsHomeRoute(
         }
     }
 
+    val fabInteraction = remember { MutableInteractionSource() }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    viewModel.recordToolLaunch("doc_scanner")
+                    onOpenTool("doc_scanner")
+                },
+                interactionSource = fabInteraction,
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                icon = { Icon(Icons.Default.DocumentScanner, contentDescription = null) },
+                text = { Text(stringResource(R.string.shortcut_scan_short)) },
+                modifier = Modifier
+                    .tactilePressScale(fabInteraction)
+                    .testTag("tools_quick_scan_fab")
+            )
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -200,7 +227,7 @@ fun ToolsHomeRoute(
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(columnCount),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
@@ -231,7 +258,7 @@ fun ToolsHomeRoute(
                                         }
                                     },
                                     singleLine = true,
-                                    shape = MaterialTheme.shapes.large
+                                    shape = RoundedCornerShape(14.dp)
                                 )
 
                                 val modeDescription = when (uiState.viewMode) {
@@ -424,16 +451,18 @@ fun ToolsHomeRoute(
                 ) {
                     stickyHeaderTitle?.let { header ->
                         Surface(
-                            color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
-                            tonalElevation = 2.dp,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = header,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-                            )
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = header,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                                )
+                                HorizontalDivider(color = LocalHairlineBorderColor.current)
+                            }
                         }
                     }
                 }
@@ -506,7 +535,8 @@ private fun RecentFilesCarousel(
         if (documents.isEmpty()) {
             Surface(
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = surfaceHairlineBorder(),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -538,26 +568,32 @@ private fun RecentFilesCarousel(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 itemsIndexed(documents, key = { _, doc -> doc.id }) { _, doc ->
+                    val cardInteraction = remember { MutableInteractionSource() }
                     Card(
-                        shape = MaterialTheme.shapes.medium,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        shape = MaterialTheme.shapes.large,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                        border = surfaceHairlineBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier
-                            .width(148.dp)
-                            .clip(MaterialTheme.shapes.medium)
-                            .clickable { onOpenDocument(doc.id) }
+                            .width(150.dp)
+                            .tactilePressScale(cardInteraction)
+                            .clip(MaterialTheme.shapes.large)
+                            .clickable(
+                                interactionSource = cardInteraction,
+                                indication = androidx.compose.material3.ripple()
+                            ) { onOpenDocument(doc.id) }
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(78.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
                                     .border(
                                         1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(10.dp)
+                                        LocalHairlineBorderColor.current,
+                                        RoundedCornerShape(12.dp)
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -642,13 +678,13 @@ private fun FavoritesCarouselSection(
                 var dragOffsetX by remember(item.definition.id) { mutableFloatStateOf(0f) }
 
                 Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = accent.container.copy(alpha = 0.72f),
-                    tonalElevation = 1.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    color = accent.container.copy(alpha = 0.85f),
+                    border = surfaceHairlineBorder(),
                     modifier = Modifier
-                        .width(140.dp)
+                        .width(144.dp)
                         .offset { IntOffset(dragOffsetX.roundToInt(), 0) }
-                        .clip(MaterialTheme.shapes.large)
+                        .clip(RoundedCornerShape(16.dp))
                         .testTag("favorite_chip_${item.definition.id}")
                         .pointerInput(index, favorites.size) {
                             detectDragGesturesAfterLongPress(

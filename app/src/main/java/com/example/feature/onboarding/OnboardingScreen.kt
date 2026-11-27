@@ -1,5 +1,10 @@
 package com.example.feature.onboarding
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,8 +19,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
@@ -31,18 +41,30 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.R
 import com.example.core.datastore.PreferencesRepository
 import com.example.core.ui.components.RunsOnDeviceBadge
 import com.example.data.repository.LibraryRepository
+import com.example.ui.theme.LocalReduceMotion
+import com.example.ui.theme.surfaceHairlineBorder
 import kotlinx.coroutines.launch
+
+private data class OnboardingSlide(
+    val icon: ImageVector,
+    val titleRes: Int,
+    val bodyRes: Int,
+    val highlights: List<String>
+)
 
 @Composable
 fun OnboardingScreen(
@@ -50,35 +72,54 @@ fun OnboardingScreen(
     libraryRepository: LibraryRepository,
     onCompleted: (openSampleDocId: String?) -> Unit
 ) {
-    var page by remember { mutableIntStateOf(0) }
-    val scope = rememberCoroutineScope()
-
     val slides = listOf(
-        Triple(
-            Icons.Default.Shield,
-            "100% Offline & Private",
-            "No internet permission, no cloud uploads, no analytics. Your contracts, scans, and notes stay strictly on your device."
+        OnboardingSlide(
+            icon = Icons.Default.Shield,
+            titleRes = R.string.onboarding_slide1_title,
+            bodyRes = R.string.onboarding_slide1_body,
+            highlights = listOf("Zero INTERNET permission", "SAF-only file access", "Works in airplane mode")
         ),
-        Triple(
-            Icons.Default.Draw,
-            "Sign, Edit & Scan Everything",
-            "Draw signatures, fill forms, merge/split/redact PDFs, edit Word & Excel files, and scan documents with ML Kit."
+        OnboardingSlide(
+            icon = Icons.Default.Draw,
+            titleRes = R.string.onboarding_slide2_title,
+            bodyRes = R.string.onboarding_slide2_body,
+            highlights = listOf("Visual & PKCS#12 signing", "Redact, compare & batch ZIP", "Word, Excel & OCR offline")
         ),
-        Triple(
-            Icons.Default.Lock,
-            "AES-256 Vault & Read Aloud",
-            "Protect sensitive documents with Keystore encryption + biometrics, read EPUB/PDFs with warm light, and listen via offline TTS."
+        OnboardingSlide(
+            icon = Icons.Default.Lock,
+            titleRes = R.string.onboarding_slide3_title,
+            bodyRes = R.string.onboarding_slide3_body,
+            highlights = listOf("Hardware Keystore AES-256", "Biometric & PIN lock", "PDF/EPUB reader + TTS")
         )
     )
-    val current = slides[page]
+    val pagerState = rememberPagerState(pageCount = { slides.size })
+    val scope = rememberCoroutineScope()
+    val reduceMotion = LocalReduceMotion.current
+
+    BackHandler(enabled = pagerState.currentPage > 0) {
+        scope.launch {
+            if (reduceMotion) pagerState.scrollToPage(pagerState.currentPage - 1)
+            else pagerState.animateScrollToPage(pagerState.currentPage - 1)
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f),
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
+                        )
+                    )
+                )
                 .padding(innerPadding)
                 .statusBarsPadding()
                 .navigationBarsPadding()
@@ -88,9 +129,9 @@ fun OnboardingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 540.dp),
+                    .widthIn(max = 560.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -107,53 +148,136 @@ fun OnboardingScreen(
                         },
                         modifier = Modifier.testTag("onboarding_skip_button")
                     ) {
-                        Text("Skip")
+                        Text(stringResource(R.string.onboarding_skip))
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .testTag("onboarding_pager")
+                ) { pageIndex ->
+                    val slide = slides[pageIndex]
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Surface(
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            tonalElevation = 4.dp,
+                            modifier = Modifier.size(104.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = slide.icon,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                        }
 
-                Surface(
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(96.dp)
+                        Spacer(Modifier.height(22.dp))
+
+                        Text(
+                            text = stringResource(slide.titleRes),
+                            style = MaterialTheme.typography.headlineMedium,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Text(
+                            text = stringResource(slide.bodyRes),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(Modifier.height(20.dp))
+
+                        Card(
+                            shape = MaterialTheme.shapes.large,
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ),
+                            border = surfaceHairlineBorder(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                slide.highlights.forEach { bullet ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = bullet,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = current.first,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(46.dp)
+                    slides.indices.forEach { idx ->
+                        val active = idx == pagerState.currentPage
+                        val width by animateDpAsState(
+                            targetValue = if (active) 28.dp else 10.dp,
+                            animationSpec = if (reduceMotion) snap() else spring(),
+                            label = "onboarding_indicator"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(width = width, height = 8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (active) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant
+                                )
                         )
                     }
                 }
 
-                Text(text = current.second, style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    text = current.third,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.height(4.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    slides.indices.forEach { idx ->
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = if (idx == page) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outlineVariant,
-                            modifier = Modifier.size(width = if (idx == page) 28.dp else 10.dp, height = 8.dp)
-                        ) {}
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                if (page < slides.lastIndex) {
+                if (pagerState.currentPage < slides.lastIndex) {
                     Button(
-                        onClick = { page += 1 },
-                        modifier = Modifier.fillMaxWidth().testTag("onboarding_next_button")
+                        onClick = {
+                            scope.launch {
+                                val next = pagerState.currentPage + 1
+                                if (reduceMotion) pagerState.scrollToPage(next)
+                                else pagerState.animateScrollToPage(next)
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("onboarding_next_button")
                     ) {
-                        Text("Next")
+                        Text(stringResource(R.string.onboarding_next))
                     }
                 } else {
                     Button(
@@ -164,11 +288,15 @@ fun OnboardingScreen(
                                 onCompleted(sample?.id)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().testTag("onboarding_sample_start_button")
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("onboarding_sample_start_button")
                     ) {
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
                         Spacer(Modifier.size(8.dp))
-                        Text("Open Sample PDF Guide")
+                        Text(stringResource(R.string.onboarding_open_sample))
                     }
                     OutlinedButton(
                         onClick = {
@@ -177,9 +305,13 @@ fun OnboardingScreen(
                                 onCompleted(null)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().testTag("onboarding_start_empty_button")
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("onboarding_start_empty_button")
                     ) {
-                        Text("Go to Tools Home")
+                        Text(stringResource(R.string.onboarding_start_tools))
                     }
                 }
             }

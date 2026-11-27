@@ -40,4 +40,24 @@
     <string name="more_feedback_subtitle">مسودات المشكلات والتشخيص والتقييم دون اتصال</string>
     <string name="more_onboarding_title">دليل الترحيب</string>
     <string name="more_onboarding_subtitle">إعادة عرض الجولة السريعة وإرشادات الخصوصية</string>
+    <string name="onboarding_skip">تخطي</string>
+    <string name="onboarding_next">التالي</string>
+    <string name="onboarding_slide1_title">يعمل 100% دون اتصال وبخصوصية تامة</string>
+    <string name="onboarding_slide1_body">بدون إذن إنترنت، وبدون رفع سحابي أو تتبع. تبقى جميع عقودك ومسوحاتك وملاحظاتك على جهازك فقط.</string>
+    <string name="onboarding_slide2_title">توقيع وتحرير ومسح شامل</string>
+    <string name="onboarding_slide2_body">ارسم التوقيعات، واملأ النماذج، وادمج وقسّم واحجب ملفات PDF، واستخدم المعالجة الدفعية وحرّر Word وExcel على جهازك.</string>
+    <string name="onboarding_slide3_title">خزنة AES-256 والقراءة الصوتية</string>
+    <string name="onboarding_slide3_body">احمِ ملفاتك الخاصة بالتشفير العتادي والبصمة، واقرأ ملفات PDF وEPUB براحة، واستمع عبر القراءة الصوتية دون اتصال.</string>
+    <string name="onboarding_open_sample">فتح دليل PDF النموذجي</string>
+    <string name="onboarding_start_tools">الانتقال إلى الأدوات</string>
+    <string name="widget_title">PDF Toolkit • دون اتصال</string>
+    <string name="widget_docs_count">%1$d مستندات في المكتبة</string>
+    <string name="widget_empty_hint">اضغط مسح أو توقيع للبدء</string>
+    <string name="widget_resume_prefix">متابعة: %1$s</string>
+    <string name="widget_library_short">المكتبة</string>
+    <string name="qs_tile_subtitle">ماسح دون اتصال</string>
+    <string name="more_privacy_audit_title">الخصوصية وتكامل النظام</string>
+    <string name="more_privacy_verified">تم التحقق: لا يوجد إذن INTERNET • تخزين SAF فقط</string>
+    <string name="more_pin_widget">إضافة أداة للشاشة الرئيسية</string>
+    <string name="more_default_pdf_settings">إعدادات عارض PDF الافتراضي</string>
 </resources>

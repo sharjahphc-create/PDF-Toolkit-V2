@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">PDF Toolkit</string>
-    <string name="section_one_badge">SECTION 1 • ARCHITECTURE, LIBRARY &amp; TTS ENGINE</string>
+    <string name="section_one_badge">OFFLINE READER &amp; LIBRARY • 100% ON-DEVICE</string>
     <string name="library_title">Document Library</string>
     <string name="library_subtitle">100% offline on-device storage &amp; read-aloud engine</string>
     <string name="import_document">Import PDF or Text</string>
@@ -148,4 +148,26 @@
     <string name="more_feedback_subtitle">Offline issue drafts, sanitized diagnostics &amp; rating</string>
     <string name="more_onboarding_title">Welcome Guide</string>
     <string name="more_onboarding_subtitle">Replay the privacy-first walkthrough &amp; quick tour</string>
+
+    <!-- Section 10: Onboarding, Widget, Quick Settings & Privacy Audit -->
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_slide1_title">100% Offline &amp; Private</string>
+    <string name="onboarding_slide1_body">No internet permission, no cloud uploads, and no analytics. Every contract, scan, and note stays strictly on your device.</string>
+    <string name="onboarding_slide2_title">Sign, Edit &amp; Scan Everything</string>
+    <string name="onboarding_slide2_body">Draw signatures, fill forms, merge, split, redact, run batch tools, edit Word &amp; Excel, and scan papers on-device.</string>
+    <string name="onboarding_slide3_title">AES-256 Vault &amp; Read Aloud</string>
+    <string name="onboarding_slide3_body">Lock private files with hardware-backed encryption and biometrics, read PDFs &amp; EPUBs cleanly, and listen via offline TTS.</string>
+    <string name="onboarding_open_sample">Open Sample PDF Guide</string>
+    <string name="onboarding_start_tools">Go to Tools Home</string>
+    <string name="widget_title">PDF Toolkit • Offline</string>
+    <string name="widget_docs_count">%1$d documents in library</string>
+    <string name="widget_empty_hint">Tap Scan or Sign to get started</string>
+    <string name="widget_resume_prefix">Resume: %1$s</string>
+    <string name="widget_library_short">Library</string>
+    <string name="qs_tile_subtitle">Offline Scanner</string>
+    <string name="more_privacy_audit_title">Offline &amp; System Integrations</string>
+    <string name="more_privacy_verified">Verified: Zero INTERNET permission • SAF-only storage</string>
+    <string name="more_pin_widget">Add Home Screen Widget</string>
+    <string name="more_default_pdf_settings">Default PDF Viewer Settings</string>
 </resources>

@@ -22,18 +22,32 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
+
+data class VaultCategorySummary(
+    val id: String?,
+    val name: String,
+    val iconName: String,
+    val colorHex: Long,
+    val documentCount: Int,
+    val storageBytes: Long
+)
 
 data class VaultUiState(
     val isUnlocked: Boolean = false,
     val isPinConfigured: Boolean = false,
     val pinError: String? = null,
     val lockedDocuments: List<LibraryDocument> = emptyList(),
+    val filteredLockedDocuments: List<LibraryDocument> = emptyList(),
     val unlockedDocuments: List<LibraryDocument> = emptyList(),
     val categories: List<DocumentCategory> = emptyList(),
+    val lockedCategories: List<DocumentCategory> = emptyList(),
+    val categorySummaries: List<VaultCategorySummary> = emptyList(),
+    val selectedCategoryFilterId: String? = null,
+    val totalVaultStorageBytes: Long = 0L,
     val isBusy: Boolean = false,
     val prefs: UserPreferences = UserPreferences()
 )
@@ -54,30 +68,83 @@ class VaultViewModel @Inject constructor(
     private val isUnlocked = MutableStateFlow(false)
     private val pinError = MutableStateFlow<String?>(null)
     private val isBusy = MutableStateFlow(false)
+    private val selectedCategoryFilterId = MutableStateFlow<String?>(null)
     private var backgroundedAtMs: Long? = null
 
     private val _events = MutableSharedFlow<VaultEvent>()
     val events: SharedFlow<VaultEvent> = _events.asSharedFlow()
 
-    val uiState: StateFlow<VaultUiState> = combine(
+    private val authAndFilterFlow = combine(
         isUnlocked,
         pinError,
+        isBusy,
+        selectedCategoryFilterId
+    ) { unlocked, err, busy, catFilter ->
+        VaultHeaderState(unlocked, err, busy, catFilter)
+    }
+
+    val uiState: StateFlow<VaultUiState> = combine(
+        authAndFilterFlow,
         libraryRepository.observeLockedDocuments(),
         libraryRepository.observeDocuments(includeLocked = false),
         libraryRepository.observeCategories(),
-        isBusy,
         preferencesRepository.preferences
-    ) { values ->
-        @Suppress("UNCHECKED_CAST")
-        val prefs = values[6] as UserPreferences
+    ) { header, lockedDocs, unlockedDocs, categories, prefs ->
+        val lockedCategories = categories.filter { it.isLocked }
+        val lockedCatIds = lockedCategories.map { it.id }.toSet()
+
+        fun docSize(doc: LibraryDocument): Long {
+            val f = File(doc.localCachePath)
+            return if (f.exists()) f.length() else doc.fileSizeBytes
+        }
+
+        val summaries = buildList {
+            // General Vault card for locked docs not assigned to a locked category
+            val uncategorized = lockedDocs.filter { it.categoryId == null || it.categoryId !in lockedCatIds }
+            add(
+                VaultCategorySummary(
+                    id = GENERAL_VAULT_FILTER_ID,
+                    name = "General Vault",
+                    iconName = "lock",
+                    colorHex = 0xFF475569L,
+                    documentCount = uncategorized.size,
+                    storageBytes = uncategorized.sumOf(::docSize)
+                )
+            )
+            lockedCategories.forEach { cat ->
+                val matching = lockedDocs.filter { it.categoryId == cat.id }
+                add(
+                    VaultCategorySummary(
+                        id = cat.id,
+                        name = cat.name,
+                        iconName = cat.iconName,
+                        colorHex = cat.colorHex,
+                        documentCount = matching.size,
+                        storageBytes = matching.sumOf(::docSize)
+                    )
+                )
+            }
+        }
+
+        val filteredDocs = when (val filterId = header.selectedCategoryFilterId) {
+            null -> lockedDocs
+            GENERAL_VAULT_FILTER_ID -> lockedDocs.filter { it.categoryId == null || it.categoryId !in lockedCatIds }
+            else -> lockedDocs.filter { it.categoryId == filterId }
+        }
+
         VaultUiState(
-            isUnlocked = values[0] as Boolean,
+            isUnlocked = header.isUnlocked,
             isPinConfigured = !prefs.vaultPinHash.isNullOrBlank(),
-            pinError = values[1] as String?,
-            lockedDocuments = values[2] as List<LibraryDocument>,
-            unlockedDocuments = values[3] as List<LibraryDocument>,
-            categories = values[4] as List<DocumentCategory>,
-            isBusy = values[5] as Boolean,
+            pinError = header.pinError,
+            lockedDocuments = lockedDocs,
+            filteredLockedDocuments = filteredDocs,
+            unlockedDocuments = unlockedDocs,
+            categories = categories,
+            lockedCategories = lockedCategories,
+            categorySummaries = summaries,
+            selectedCategoryFilterId = header.selectedCategoryFilterId,
+            totalVaultStorageBytes = lockedDocs.sumOf(::docSize),
+            isBusy = header.isBusy,
             prefs = prefs
         )
     }.stateIn(
@@ -85,6 +152,10 @@ class VaultViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = VaultUiState()
     )
+
+    fun selectCategoryFilter(filterId: String?) {
+        selectedCategoryFilterId.value = if (selectedCategoryFilterId.value == filterId) null else filterId
+    }
 
     fun createOrUpdatePin(pin: String) {
         if (pin.length < 4) {
@@ -142,13 +213,67 @@ class VaultViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.setHideLockedThumbnails(hide) }
     }
 
-    fun lockDocument(doc: LibraryDocument) {
+    fun setAppLockEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAppLockEnabled(enabled)
+            _events.emit(
+                VaultEvent.ShowMessage(
+                    if (enabled) "Whole-app lock enabled" else "Whole-app lock disabled"
+                )
+            )
+        }
+    }
+
+    fun createLockedCategory(name: String, iconName: String, colorHex: Long) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val created = libraryRepository.createCategory(
+                name = clean,
+                iconName = iconName,
+                colorHex = colorHex,
+                isLocked = true
+            )
+            selectedCategoryFilterId.value = created.id
+            _events.emit(VaultEvent.ShowMessage("Created locked category \"${created.name}\""))
+        }
+    }
+
+    fun lockDocument(doc: LibraryDocument, targetCategoryId: String? = null) {
         viewModelScope.launch {
             isBusy.value = true
-            libraryRepository.moveDocumentToVault(doc.id)
+            val resolvedCatId = targetCategoryId
+                ?: selectedCategoryFilterId.value?.takeUnless { it == GENERAL_VAULT_FILTER_ID }
+            libraryRepository.moveDocumentToVault(doc.id, targetCategoryId = resolvedCatId)
                 .onSuccess { _events.emit(VaultEvent.ShowMessage("Encrypted \"${doc.title}\" in Vault")) }
                 .onFailure { _events.emit(VaultEvent.ShowMessage(it.localizedMessage ?: "Failed to encrypt document")) }
             isBusy.value = false
+        }
+    }
+
+    fun importFromDeviceToVault(uri: Uri, categoryId: String?, deleteOriginal: Boolean) {
+        viewModelScope.launch {
+            isBusy.value = true
+            val result = libraryRepository.importFromUriWithMode(
+                uri = uri,
+                categoryId = categoryId,
+                deleteOriginal = deleteOriginal,
+                lockInVault = true
+            )
+            isBusy.value = false
+            result.onSuccess { res ->
+                val msg = when {
+                    deleteOriginal && res.originalDeleted ->
+                        "Moved & encrypted \"${res.document.title}\" in Vault (original deleted)"
+                    deleteOriginal ->
+                        "Encrypted \"${res.document.title}\" in Vault (provider blocked deleting original)"
+                    else ->
+                        "Encrypted \"${res.document.title}\" in Vault"
+                }
+                _events.emit(VaultEvent.ShowMessage(msg))
+            }.onFailure { err ->
+                _events.emit(VaultEvent.ShowMessage(err.localizedMessage ?: "Failed to import into Vault"))
+            }
         }
     }
 
@@ -162,10 +287,14 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    fun exportEncryptedBackup(destUri: Uri, passphrase: String) {
+    fun exportEncryptedBackup(
+        destUri: Uri,
+        passphrase: String,
+        includeVaultFiles: Boolean = true
+    ) {
         viewModelScope.launch {
             isBusy.value = true
-            val res = libraryRepository.exportEncryptedBackup(passphrase)
+            val res = libraryRepository.exportEncryptedBackup(passphrase, includeVaultFiles)
             res.onSuccess { encryptedBytes ->
                 val writeRes = withContext(ioDispatcher) {
                     runCatching {
@@ -174,7 +303,12 @@ class VaultViewModel @Inject constructor(
                     }
                 }
                 writeRes.onSuccess {
-                    _events.emit(VaultEvent.ShowMessage("Encrypted backup saved (${encryptedBytes.size / 1024} KB)"))
+                    val scopeLabel = if (includeVaultFiles) "including Vault files" else "excluding Vault files"
+                    _events.emit(
+                        VaultEvent.ShowMessage(
+                            "Encrypted backup saved (${(encryptedBytes.size / 1024).coerceAtLeast(1)} KB, $scopeLabel)"
+                        )
+                    )
                 }.onFailure { err ->
                     _events.emit(VaultEvent.ShowMessage(err.localizedMessage ?: "Failed to write backup"))
                 }
@@ -197,7 +331,7 @@ class VaultViewModel @Inject constructor(
             bytesRes.onSuccess { bytes ->
                 libraryRepository.restoreEncryptedBackup(bytes, passphrase)
                     .onSuccess { count ->
-                        _events.emit(VaultEvent.ShowMessage("Restored $count item(s) from encrypted backup"))
+                        _events.emit(VaultEvent.ShowMessage("Restored $count item(s) & settings from backup"))
                     }
                     .onFailure { err ->
                         _events.emit(VaultEvent.ShowMessage(err.localizedMessage ?: "Wrong passphrase or invalid backup"))
@@ -207,5 +341,16 @@ class VaultViewModel @Inject constructor(
             }
             isBusy.value = false
         }
+    }
+
+    private data class VaultHeaderState(
+        val isUnlocked: Boolean,
+        val pinError: String?,
+        val isBusy: Boolean,
+        val selectedCategoryFilterId: String?
+    )
+
+    companion object {
+        const val GENERAL_VAULT_FILTER_ID = "__general_vault__"
     }
 }

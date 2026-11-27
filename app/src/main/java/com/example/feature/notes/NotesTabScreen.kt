@@ -2,6 +2,7 @@ package com.example.feature.notes
 
 import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.Checklist
@@ -36,8 +38,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +72,8 @@ import com.example.R
 import com.example.core.database.entity.NoteType
 import com.example.core.ui.components.EmptyStateView
 import com.example.ui.theme.LocalIsDarkTheme
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,8 +124,11 @@ fun NotesTabScreen(
         }
     }
 
+    val fabInteraction = remember { MutableInteractionSource() }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -153,12 +160,18 @@ fun NotesTabScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { viewModel.startNewNote(NoteType.TEXT) },
-                modifier = Modifier.testTag("notes_fab_new")
-            ) {
-                Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = "New note")
-            }
+                interactionSource = fabInteraction,
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                icon = { Icon(Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null) },
+                text = { Text("New Note") },
+                modifier = Modifier
+                    .tactilePressScale(fabInteraction)
+                    .testTag("notes_fab_new")
+            )
         }
     ) { innerPadding ->
         Box(
@@ -174,7 +187,7 @@ fun NotesTabScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .widthIn(max = 760.dp),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -191,7 +204,7 @@ fun NotesTabScreen(
                             }
                         },
                         singleLine = true,
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth().testTag("notes_search_input")
                     )
                 }
@@ -386,21 +399,29 @@ private fun NoteCard(
     modifier: Modifier = Modifier
 ) {
     val isDark = LocalIsDarkTheme.current
+    val interactionSource = remember { MutableInteractionSource() }
     val cardColor = when (note.colorKey) {
-        "amber" -> if (isDark) Color(0xFF3A2F1C) else Color(0xFFFFF3DC)
-        "sage" -> if (isDark) Color(0xFF1D3529) else Color(0xFFE4F7EC)
-        "sky" -> if (isDark) Color(0xFF1D2F42) else Color(0xFFE7F3FF)
-        "rose" -> if (isDark) Color(0xFF3C2028) else Color(0xFFFFEBF0)
-        else -> MaterialTheme.colorScheme.surface
+        "amber" -> if (isDark) Color(0xFF2D2518) else Color(0xFFFFF3DC)
+        "sage" -> if (isDark) Color(0xFF182B22) else Color(0xFFE4F7EC)
+        "sky" -> if (isDark) Color(0xFF182636) else Color(0xFFE7F3FF)
+        "rose" -> if (isDark) Color(0xFF301B22) else Color(0xFFFFEBF0)
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = cardColor),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
             .fillMaxWidth()
+            .tactilePressScale(interactionSource)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onOpen)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = androidx.compose.material3.ripple(),
+                onClick = onOpen
+            )
             .testTag("note_card_${note.id}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {

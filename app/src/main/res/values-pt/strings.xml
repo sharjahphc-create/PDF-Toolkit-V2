@@ -40,4 +40,24 @@
     <string name="more_feedback_subtitle">Rascunhos offline, diagnóstico sanitizado e avaliação</string>
     <string name="more_onboarding_title">Guia de boas-vindas</string>
     <string name="more_onboarding_subtitle">Rever o tour rápido e a introdução de privacidade</string>
+    <string name="onboarding_skip">Pular</string>
+    <string name="onboarding_next">Próximo</string>
+    <string name="onboarding_slide1_title">100% offline e privado</string>
+    <string name="onboarding_slide1_body">Sem permissão de internet, sem envios para a nuvem e sem rastreadores. Todos os seus contratos, digitalizações e notas ficam apenas no seu dispositivo.</string>
+    <string name="onboarding_slide2_title">Assine, edite e digitalize tudo</string>
+    <string name="onboarding_slide2_body">Desenhe assinaturas, preencha formulários, mescle, divida, oculte dados, processe em lote, edite Word e Excel e digitalize documentos no aparelho.</string>
+    <string name="onboarding_slide3_title">Cofre AES-256 e leitura em voz alta</string>
+    <string name="onboarding_slide3_body">Proteja arquivos privados com criptografia de hardware e biometria, leia PDFs e EPUBs com conforto e ouça via voz offline.</string>
+    <string name="onboarding_open_sample">Abrir guia PDF de exemplo</string>
+    <string name="onboarding_start_tools">Ir para Ferramentas</string>
+    <string name="widget_title">PDF Toolkit • Offline</string>
+    <string name="widget_docs_count">%1$d documentos na biblioteca</string>
+    <string name="widget_empty_hint">Toque em Digitalizar ou Assinar para começar</string>
+    <string name="widget_resume_prefix">Continuar: %1$s</string>
+    <string name="widget_library_short">Biblioteca</string>
+    <string name="qs_tile_subtitle">Scanner offline</string>
+    <string name="more_privacy_audit_title">Integrações e privacidade offline</string>
+    <string name="more_privacy_verified">Verificado: sem permissão INTERNET • Apenas SAF</string>
+    <string name="more_pin_widget">Adicionar widget à tela inicial</string>
+    <string name="more_default_pdf_settings">Configurações de leitor de PDF padrão</string>
 </resources>

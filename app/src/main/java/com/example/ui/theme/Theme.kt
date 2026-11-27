@@ -35,6 +35,11 @@ private val LightColorScheme = lightColorScheme(
     onSurface = LightOnSurface,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightOnSurfaceVariant,
+    surfaceContainerLowest = LightSurfaceContainerLowest,
+    surfaceContainerLow = LightSurfaceContainerLow,
+    surfaceContainer = LightSurfaceContainer,
+    surfaceContainerHigh = LightSurfaceContainerHigh,
+    surfaceContainerHighest = LightSurfaceContainerHighest,
     outline = LightOutline,
     outlineVariant = LightOutlineVariant
 )
@@ -58,6 +63,11 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant,
+    surfaceContainerLowest = DarkSurfaceContainerLowest,
+    surfaceContainerLow = DarkSurfaceContainerLow,
+    surfaceContainer = DarkSurfaceContainer,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
+    surfaceContainerHighest = DarkSurfaceContainerHighest,
     outline = DarkOutline,
     outlineVariant = DarkOutlineVariant
 )
@@ -67,6 +77,8 @@ private val HighContrastLightColorScheme = LightColorScheme.copy(
     onPrimary = Color.White,
     background = Color.White,
     surface = Color.White,
+    surfaceContainerLow = Color(0xFFF3F4F6),
+    surfaceContainerHigh = Color.White,
     onBackground = Color.Black,
     onSurface = Color.Black,
     outline = Color(0xFF1F2937)
@@ -75,18 +87,26 @@ private val HighContrastLightColorScheme = LightColorScheme.copy(
 private val HighContrastDarkColorScheme = DarkColorScheme.copy(
     primary = Color(0xFFCCE3FF),
     onPrimary = Color.Black,
-    background = Color.Black,
-    surface = Color(0xFF0A0D12),
+    background = DarkBackground,
+    surface = DarkBackground,
+    surfaceContainerLow = DarkSurfaceContainerLow,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
     onBackground = Color.White,
     onSurface = Color.White,
     outline = Color(0xFFE5E7EB)
 )
 
+/**
+ * Concentric nested corner radii:
+ * - extraLarge: 28dp (modals & bottom sheets)
+ * - large: 20dp (cards & elevated panels)
+ * - medium / small: 12dp (inner buttons, text fields, icon tiles)
+ */
 val PdfToolkitShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(24.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(20.dp),
     extraLarge = RoundedCornerShape(28.dp)
 )
 
@@ -110,16 +130,31 @@ fun PdfToolkitTheme(
         highContrast && !darkTheme -> HighContrastLightColorScheme
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (darkTheme) {
+                dynamicDarkColorScheme(context).copy(
+                    background = DarkBackground,
+                    surface = DarkSurface,
+                    surfaceContainerLowest = DarkSurfaceContainerLowest,
+                    surfaceContainerLow = DarkSurfaceContainerLow,
+                    surfaceContainer = DarkSurfaceContainer,
+                    surfaceContainerHigh = DarkSurfaceContainerHigh,
+                    surfaceContainerHighest = DarkSurfaceContainerHighest
+                )
+            } else {
+                dynamicLightColorScheme(context)
+            }
         }
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
 
+    val hairlineColor = if (darkTheme) DarkHairlineBorder else LightHairlineBorder
+
     CompositionLocalProvider(
         LocalPdfToolkitSpacing provides PdfToolkitSpacing(),
         LocalReduceMotion provides reduceMotion,
-        LocalIsDarkTheme provides darkTheme
+        LocalIsDarkTheme provides darkTheme,
+        LocalHairlineBorderColor provides hairlineColor
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

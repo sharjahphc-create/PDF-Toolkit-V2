@@ -26,6 +26,7 @@ import com.example.feature.pdftools.engine.PhotoPageConfig
 import com.example.feature.pdftools.engine.SignatureVerificationInfo
 import com.example.feature.sign.PdfOpenResult
 import com.example.feature.sign.PdfSignatureFlattener
+import com.example.system.SharedIntentBridge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -136,7 +137,8 @@ class CorePdfToolsViewModel @Inject constructor(
     private val cryptoImageEngine: PdfCryptoAndImageEngine,
     private val flattener: PdfSignatureFlattener,
     private val libraryRepository: LibraryRepository,
-    private val toolUsageRepository: ToolUsageRepository
+    private val toolUsageRepository: ToolUsageRepository,
+    private val sharedIntentBridge: SharedIntentBridge
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CorePdfToolUiState())
@@ -155,9 +157,16 @@ class CorePdfToolsViewModel @Inject constructor(
     private var pendingCameraFile: File? = null
 
     fun initTool(toolId: String) {
-        if (_uiState.value.toolId == toolId) return
-        activeJob?.cancel()
-        _uiState.value = CorePdfToolUiState(toolId = toolId)
+        if (_uiState.value.toolId != toolId) {
+            activeJob?.cancel()
+            _uiState.value = CorePdfToolUiState(toolId = toolId)
+        }
+        if (toolId == "photos_to_pdf") {
+            val sharedUris = sharedIntentBridge.consumeSharedImages()
+            if (sharedUris.isNotEmpty()) {
+                addGalleryPhotos(sharedUris)
+            }
+        }
     }
 
     fun pickBundledSamplePdf() {

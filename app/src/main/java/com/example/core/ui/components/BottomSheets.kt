@@ -1,6 +1,7 @@
 package com.example.core.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,8 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +38,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.domain.model.DocumentCategory
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +55,7 @@ fun ConfirmActionBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
@@ -89,6 +92,7 @@ fun ConfirmActionBottomSheet(
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
@@ -96,11 +100,14 @@ fun ConfirmActionBottomSheet(
                 ) {
                     Text(stringResource(R.string.cancel))
                 }
+                val confirmInteraction = remember { MutableInteractionSource() }
                 Button(
                     onClick = {
                         onConfirm()
                         onDismiss()
                     },
+                    interactionSource = confirmInteraction,
+                    shape = RoundedCornerShape(12.dp),
                     colors = if (isDestructive) {
                         ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
@@ -112,6 +119,7 @@ fun ConfirmActionBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
+                        .tactilePressScale(confirmInteraction)
                         .testTag("sheet_confirm_button")
                 ) {
                     Text(confirmLabel)
@@ -134,6 +142,7 @@ fun MoveToCategoryBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
@@ -150,19 +159,25 @@ fun MoveToCategoryBottomSheet(
             Spacer(Modifier.height(12.dp))
             categories.forEach { category ->
                 val isSelected = category.id == currentCategoryId
+                val itemInteraction = remember { MutableInteractionSource() }
                 Surface(
-                    shape = MaterialTheme.shapes.medium,
+                    shape = RoundedCornerShape(12.dp),
                     color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        MaterialTheme.colorScheme.surfaceContainerLow
                     },
+                    border = surfaceHairlineBorder(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
-                        .clip(MaterialTheme.shapes.medium)
+                        .tactilePressScale(itemInteraction)
+                        .clip(RoundedCornerShape(12.dp))
                         .heightIn(min = 52.dp)
-                        .clickable {
+                        .clickable(
+                            interactionSource = itemInteraction,
+                            indication = androidx.compose.material3.ripple()
+                        ) {
                             onSelectCategory(category.id)
                             onDismiss()
                         }
@@ -172,16 +187,24 @@ fun MoveToCategoryBottomSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (category.isLocked) Icons.Default.Lock else Icons.Default.Folder,
+                            imageVector = categoryIconForName(category.iconName, category.isLocked),
                             contentDescription = null,
                             tint = Color(category.colorHex)
                         )
                         Spacer(Modifier.width(14.dp))
-                        Text(
-                            text = category.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = category.name,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            if (category.isLocked) {
+                                Text(
+                                    text = "Encrypted Vault category",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         if (isSelected) {
                             Icon(
                                 imageVector = Icons.Default.Check,

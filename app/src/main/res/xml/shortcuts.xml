@@ -3,7 +3,7 @@
     <shortcut
         android:shortcutId="shortcut_scan"
         android:enabled="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_shortcut_scan"
         android:shortcutShortLabel="@string/shortcut_scan_short"
         android:shortcutLongLabel="@string/shortcut_scan_long">
         <intent
@@ -17,7 +17,7 @@
     <shortcut
         android:shortcutId="shortcut_sign"
         android:enabled="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_shortcut_sign"
         android:shortcutShortLabel="@string/shortcut_sign_short"
         android:shortcutLongLabel="@string/shortcut_sign_long">
         <intent
@@ -31,7 +31,7 @@
     <shortcut
         android:shortcutId="shortcut_merge"
         android:enabled="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_shortcut_merge"
         android:shortcutShortLabel="@string/shortcut_merge_short"
         android:shortcutLongLabel="@string/shortcut_merge_long">
         <intent
@@ -45,7 +45,7 @@
     <shortcut
         android:shortcutId="shortcut_notes"
         android:enabled="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_shortcut_notes"
         android:shortcutShortLabel="@string/shortcut_notes_short"
         android:shortcutLongLabel="@string/shortcut_notes_long">
         <intent

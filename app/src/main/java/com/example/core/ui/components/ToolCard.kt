@@ -1,12 +1,9 @@
 package com.example.core.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +25,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -46,9 +41,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.datastore.ToolsViewMode
 import com.example.ui.theme.LocalIsDarkTheme
-import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.ToolAccentCategory
 import com.example.ui.theme.colors
+import com.example.ui.theme.surfaceHairlineBorder
+import com.example.ui.theme.tactilePressScale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,26 +61,19 @@ fun ToolCard(
     modifier: Modifier = Modifier
 ) {
     val isDark = LocalIsDarkTheme.current
-    val reduceMotion = LocalReduceMotion.current
     val accentColors = category.colors(isDark)
     val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && !reduceMotion) 0.96f else 1f,
-        animationSpec = spring(stiffness = 500f),
-        label = "toolCardScale"
-    )
 
     Card(
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.large, // 20dp concentric card radius
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = surfaceHairlineBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier
-            .scale(scale)
+            .tactilePressScale(interactionSource, pressedScale = 0.97f)
             .clip(MaterialTheme.shapes.large)
             .testTag("tool_card_$toolId")
             .semantics(mergeDescendants = true) {
@@ -121,16 +110,16 @@ fun ToolCard(
                         verticalAlignment = Alignment.Top
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(12.dp), // Concentric inner radius
                             color = accentColors.container,
-                            modifier = Modifier.size(46.dp)
+                            modifier = Modifier.size(44.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = icon,
                                     contentDescription = null,
                                     tint = accentColors.accent,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -172,7 +161,7 @@ fun ToolCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = accentColors.container,
                         modifier = Modifier.size(44.dp)
                     ) {
@@ -224,7 +213,7 @@ fun ToolCard(
                 ) {
                     Box(contentAlignment = Alignment.TopEnd) {
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             color = accentColors.container,
                             modifier = Modifier.size(42.dp)
                         ) {
@@ -233,14 +222,14 @@ fun ToolCard(
                                     imageVector = icon,
                                     contentDescription = null,
                                     tint = accentColors.accent,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(21.dp)
                                 )
                             }
                         }
                         if (isFavorite) {
                             Box(
                                 modifier = Modifier
-                                    .size(10.dp)
+                                    .size(9.dp)
                                     .clip(RoundedCornerShape(5.dp))
                                     .background(accentColors.accent)
                             )

@@ -41,12 +41,15 @@ import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -55,6 +58,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -80,9 +84,11 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
+import com.example.core.ui.components.CopyOrMoveImportSheet
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -108,6 +114,7 @@ import com.example.feature.standout.StandoutToolRoute
 import com.example.feature.tools.ToolWorkspaceScreen
 import com.example.feature.tools.ToolsHomeRoute
 import com.example.feature.vault.VaultRoute
+import com.example.ui.theme.LocalHairlineBorderColor
 import com.example.ui.theme.LocalReduceMotion
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -169,6 +176,8 @@ fun PdfToolkitAppShell(
     var appLockBackgroundedAt by rememberSaveable { mutableLongStateOf(0L) }
     var initialCheckDone by rememberSaveable { mutableStateOf(false) }
     var showDefaultPdfBanner by remember { mutableStateOf(false) }
+    var pendingShareImportUri by remember { mutableStateOf<Uri?>(null) }
+    val allCategories by libraryRepository.observeCategories().collectAsStateWithLifecycle(initialValue = emptyList())
 
     // Synchronize initial App Lock & First-Launch Onboarding after first real DataStore emission
     LaunchedEffect(Unit) {
@@ -229,22 +238,31 @@ fun PdfToolkitAppShell(
                     }
                 }
             }
+            is LaunchCommand.OpenDocumentId -> {
+                navController.navigate(AppRoute.Reader(cmd.documentId)) {
+                    launchSingleTop = true
+                }
+            }
             is LaunchCommand.OpenSharedImages -> {
                 navController.navigate(AppRoute.ToolWorkspace("photos_to_pdf")) {
                     launchSingleTop = true
                 }
             }
             is LaunchCommand.OpenDocumentUri -> {
-                val res = libraryRepository.importFromUri(cmd.uri)
-                res.onSuccess { doc ->
-                    navController.navigate(AppRoute.Reader(doc.id)) {
-                        launchSingleTop = true
+                if (cmd.fromViewIntent) {
+                    val res = libraryRepository.importFromUri(cmd.uri)
+                    res.onSuccess { doc ->
+                        navController.navigate(AppRoute.Reader(doc.id)) {
+                            launchSingleTop = true
+                        }
+                        if (prefs.defaultPdfPromptCount < 2 && !prefs.dontAskDefaultPdf) {
+                            showDefaultPdfBanner = true
+                        }
+                    }.onFailure { err ->
+                        shellSnackbarHostState.showSnackbar("Unable to open file: ${err.localizedMessage ?: "Unsupported file"}")
                     }
-                    if (cmd.fromViewIntent && prefs.defaultPdfPromptCount < 2 && !prefs.dontAskDefaultPdf) {
-                        showDefaultPdfBanner = true
-                    }
-                }.onFailure { err ->
-                    shellSnackbarHostState.showSnackbar("Unable to open file: ${err.localizedMessage ?: "Unsupported file"}")
+                } else {
+                    pendingShareImportUri = cmd.uri
                 }
             }
         }
@@ -272,30 +290,44 @@ fun PdfToolkitAppShell(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(shellSnackbarHostState) },
             bottomBar = {
                 if (showTopLevelChrome && !useNavRail) {
-                    NavigationBar {
-                        topLevelDestinations.forEach { dest ->
-                            val selected = when (dest.route) {
-                                AppRoute.ToolsHome -> currentDestination?.hasRoute<AppRoute.ToolsHome>() == true
-                                AppRoute.Notes -> currentDestination?.hasRoute<AppRoute.Notes>() == true
-                                AppRoute.More -> currentDestination?.hasRoute<AppRoute.More>() == true
-                                else -> false
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = LocalHairlineBorderColor.current)
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            tonalElevation = 0.dp
+                        ) {
+                            topLevelDestinations.forEach { dest ->
+                                val selected = when (dest.route) {
+                                    AppRoute.ToolsHome -> currentDestination?.hasRoute<AppRoute.ToolsHome>() == true
+                                    AppRoute.Notes -> currentDestination?.hasRoute<AppRoute.Notes>() == true
+                                    AppRoute.More -> currentDestination?.hasRoute<AppRoute.More>() == true
+                                    else -> false
+                                }
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = { navigateToTopLevel(dest.route) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ),
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                            contentDescription = stringResource(dest.labelRes)
+                                        )
+                                    },
+                                    label = { Text(stringResource(dest.labelRes)) },
+                                    modifier = Modifier.testTag(dest.testTag)
+                                )
                             }
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = { navigateToTopLevel(dest.route) },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                        contentDescription = stringResource(dest.labelRes)
-                                    )
-                                },
-                                label = { Text(stringResource(dest.labelRes)) },
-                                modifier = Modifier.testTag(dest.testTag)
-                            )
                         }
                     }
                 }
@@ -307,7 +339,9 @@ fun PdfToolkitAppShell(
                     .padding(innerPadding)
             ) {
                 if (showTopLevelChrome && useNavRail) {
-                    NavigationRail {
+                    NavigationRail(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
                         topLevelDestinations.forEach { dest ->
                             val selected = when (dest.route) {
                                 AppRoute.ToolsHome -> currentDestination?.hasRoute<AppRoute.ToolsHome>() == true
@@ -318,6 +352,13 @@ fun PdfToolkitAppShell(
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = { navigateToTopLevel(dest.route) },
+                                colors = NavigationRailItemDefaults.colors(
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
                                 icon = {
                                     Icon(
                                         imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
@@ -329,6 +370,7 @@ fun PdfToolkitAppShell(
                             )
                         }
                     }
+                    VerticalDivider(color = LocalHairlineBorderColor.current)
                 }
 
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
@@ -545,6 +587,58 @@ fun PdfToolkitAppShell(
                     }
                 }
             }
+        }
+
+        // Share-sheet Copy or Move import confirmation sheet
+        pendingShareImportUri?.let { sharedUri ->
+            CopyOrMoveImportSheet(
+                title = "Save Shared File",
+                subtitle = "Choose a category and whether to keep or remove the original file.",
+                categories = allCategories,
+                defaultCategoryId = null,
+                onConfirmCopy = { catId ->
+                    scope.launch {
+                        libraryRepository.importFromUriWithMode(
+                            uri = sharedUri,
+                            categoryId = catId,
+                            deleteOriginal = false
+                        ).onSuccess { res ->
+                            if (res.document.isLocked) {
+                                shellSnackbarHostState.showSnackbar("Encrypted \"${res.document.title}\" in Vault")
+                                navController.navigate(AppRoute.Vault) { launchSingleTop = true }
+                            } else {
+                                navController.navigate(AppRoute.Reader(res.document.id)) { launchSingleTop = true }
+                            }
+                        }.onFailure { err ->
+                            shellSnackbarHostState.showSnackbar(err.localizedMessage ?: "Unable to import shared file")
+                        }
+                    }
+                },
+                onConfirmMove = { catId ->
+                    scope.launch {
+                        libraryRepository.importFromUriWithMode(
+                            uri = sharedUri,
+                            categoryId = catId,
+                            deleteOriginal = true
+                        ).onSuccess { res ->
+                            val msg = if (res.originalDeleted) {
+                                "Moved \"${res.document.title}\" (original deleted)"
+                            } else {
+                                "Copied \"${res.document.title}\" (provider blocked deleting original)"
+                            }
+                            shellSnackbarHostState.showSnackbar(msg)
+                            if (res.document.isLocked) {
+                                navController.navigate(AppRoute.Vault) { launchSingleTop = true }
+                            } else {
+                                navController.navigate(AppRoute.Reader(res.document.id)) { launchSingleTop = true }
+                            }
+                        }.onFailure { err ->
+                            shellSnackbarHostState.showSnackbar(err.localizedMessage ?: "Unable to move shared file")
+                        }
+                    }
+                },
+                onDismiss = { pendingShareImportUri = null }
+            )
         }
 
         // Full-screen App Lock gate when enabled

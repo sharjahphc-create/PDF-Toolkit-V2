@@ -40,4 +40,24 @@
     <string name="more_feedback_subtitle">Borradores sin conexión, diagnóstico y valoración</string>
     <string name="more_onboarding_title">Guía de bienvenida</string>
     <string name="more_onboarding_subtitle">Volver a ver el recorrido rápido de privacidad</string>
+    <string name="onboarding_skip">Omitir</string>
+    <string name="onboarding_next">Siguiente</string>
+    <string name="onboarding_slide1_title">100% sin conexión y privado</string>
+    <string name="onboarding_slide1_body">Sin permiso de internet, sin subidas a la nube ni rastreadores. Todos tus contratos, escaneos y notas permanecen en tu dispositivo.</string>
+    <string name="onboarding_slide2_title">Firma, edita y escanea todo</string>
+    <string name="onboarding_slide2_body">Dibuja firmas, rellena formularios, une, divide, redacta, procesa por lotes, edita Word y Excel, y escanea documentos en tu dispositivo.</string>
+    <string name="onboarding_slide3_title">Bóveda AES-256 y lectura en voz alta</string>
+    <string name="onboarding_slide3_body">Protege archivos privados con cifrado por hardware y biometría, lee PDF y EPUB cómodamente y escucha con voz sin conexión.</string>
+    <string name="onboarding_open_sample">Abrir guía PDF de muestra</string>
+    <string name="onboarding_start_tools">Ir a Herramientas</string>
+    <string name="widget_title">PDF Toolkit • Sin conexión</string>
+    <string name="widget_docs_count">%1$d documentos en la biblioteca</string>
+    <string name="widget_empty_hint">Toca Escanear o Firmar para comenzar</string>
+    <string name="widget_resume_prefix">Continuar: %1$s</string>
+    <string name="widget_library_short">Biblioteca</string>
+    <string name="qs_tile_subtitle">Escáner sin conexión</string>
+    <string name="more_privacy_audit_title">Integraciones y privacidad sin conexión</string>
+    <string name="more_privacy_verified">Verificado: sin permiso de INTERNET • Solo SAF</string>
+    <string name="more_pin_widget">Añadir widget a la pantalla de inicio</string>
+    <string name="more_default_pdf_settings">Ajustes de visor PDF predeterminado</string>
 </resources>

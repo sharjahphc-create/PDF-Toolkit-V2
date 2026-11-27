@@ -40,4 +40,24 @@
     <string name="more_feedback_subtitle">ऑफ़लाइन समस्या ड्राफ़्ट, डायग्नोस्टिक्स और रेटिंग</string>
     <string name="more_onboarding_title">स्वागत गाइड</string>
     <string name="more_onboarding_subtitle">गोपनीयता परिचय और त्वरित टूर फिर से देखें</string>
+    <string name="onboarding_skip">छोड़ें</string>
+    <string name="onboarding_next">आगे</string>
+    <string name="onboarding_slide1_title">100% ऑफ़लाइन और निजी</string>
+    <string name="onboarding_slide1_body">कोई इंटरनेट अनुमति नहीं, कोई क्लाउड अपलोड नहीं और कोई एनालिटिक्स नहीं। आपके सभी दस्तावेज़, स्कैन और नोट्स केवल आपके डिवाइस पर रहते हैं।</string>
+    <string name="onboarding_slide2_title">हस्ताक्षर, संपादन और स्कैनिंग</string>
+    <string name="onboarding_slide2_body">हस्ताक्षर बनाएं, फ़ॉर्म भरें, PDF मर्ज/स्प्लिट/रीडैक्ट करें, बैच टूल्स चलाएं, Word और Excel संपादित करें और पेपर स्कैन करें।</string>
+    <string name="onboarding_slide3_title">AES-256 वॉल्ट और बोलकर सुनना</string>
+    <string name="onboarding_slide3_body">हार्डवेयर एन्क्रिप्शन और बायोमेट्रिक्स से निजी फ़ाइलें लॉक करें, PDF व EPUB आराम से पढ़ें और ऑफ़लाइन TTS से सुनें।</string>
+    <string name="onboarding_open_sample">नमूना PDF गाइड खोलें</string>
+    <string name="onboarding_start_tools">टूल्स होम पर जाएं</string>
+    <string name="widget_title">PDF Toolkit • ऑफ़लाइन</string>
+    <string name="widget_docs_count">लाइब्रेरी में %1$d दस्तावेज़</string>
+    <string name="widget_empty_hint">शुरू करने के लिए स्कैन या हस्ताक्षर चुनें</string>
+    <string name="widget_resume_prefix">जारी रखें: %1$s</string>
+    <string name="widget_library_short">लाइब्रेरी</string>
+    <string name="qs_tile_subtitle">ऑफ़लाइन स्कैनर</string>
+    <string name="more_privacy_audit_title">ऑफ़लाइन और सिस्टम एकीकरण</string>
+    <string name="more_privacy_verified">सत्यापित: कोई INTERNET अनुमति नहीं • केवल SAF संग्रहण</string>
+    <string name="more_pin_widget">होम स्क्रीन विजेट जोड़ें</string>
+    <string name="more_default_pdf_settings">डिफ़ॉल्ट PDF व्यूअर सेटिंग्स</string>
 </resources>

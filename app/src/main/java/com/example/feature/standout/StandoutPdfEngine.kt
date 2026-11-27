@@ -13,13 +13,14 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.example.core.common.IoDispatcher
 import com.google.mlkit.common.model.DownloadConditions
-import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDDocumentInformation
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
@@ -44,35 +45,6 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
-
-data class PiiMatchSummary(
-    val category: String,
-    val sample: String,
-    val pageNumbers: List<Int>
-)
-
-data class PdfCompareDiff(
-    val leftPages: Int,
-    val rightPages: Int,
-    val changedPageCount: Int,
-    val addedLines: List<String>,
-    val removedLines: List<String>
-)
-
-data class DecodedBarcodeItem(
-    val formatLabel: String,
-    val rawValue: String,
-    val displayType: String
-)
-
-enum class TranslateTargetLang(val code: String, val displayName: String) {
-    SPANISH(TranslateLanguage.SPANISH, "Spanish"),
-    HINDI(TranslateLanguage.HINDI, "Hindi"),
-    ARABIC(TranslateLanguage.ARABIC, "Arabic"),
-    PORTUGUESE(TranslateLanguage.PORTUGUESE, "Portuguese"),
-    FRENCH(TranslateLanguage.FRENCH, "French"),
-    GERMAN(TranslateLanguage.GERMAN, "German")
-}
 
 @Singleton
 class StandoutPdfEngine @Inject constructor(
@@ -100,10 +72,15 @@ class StandoutPdfEngine @Inject constructor(
         pageMap.entries.map { (key, pair) ->
             PiiMatchSummary(
                 category = key.substringBefore(':'),
-                sample = pair.first,
+                sample = maskPiiSample(pair.first),
                 pageNumbers = pair.second.sorted()
             )
         }
+    }
+
+    private fun maskPiiSample(raw: String): String {
+        if (raw.length <= 6) return "***"
+        return raw.take(2) + "•••" + raw.takeLast(3)
     }
 
     private fun collectPii(
@@ -123,18 +100,16 @@ class StandoutPdfEngine @Inject constructor(
 
     /**
      * Permanently redacts target pages by rendering to bitmap, burning opaque black redaction bars
-     * over normalized boxes / PII regions, and rewriting flat raster pages so underlying text cannot be copied.
+     * over all user boxes + optional PII bands, stripping metadata, and rewriting flat raster pages
+     * so underlying text cannot be selected or copied.
      */
     suspend fun redactPdf(
         sourceFile: File,
         outputFile: File,
-        boxNormalizedX: Float,
-        boxNormalizedY: Float,
-        boxNormalizedW: Float,
-        boxNormalizedH: Float,
-        targetPageIndex: Int,
-        redactAllPagesWithBox: Boolean,
+        boxes: List<RedactionBox>,
+        redactAllPagesWithBoxes: Boolean,
         scrubPiiBand: Boolean,
+        stripMetadata: Boolean = true,
         onProgress: (Float) -> Unit = {}
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
@@ -146,6 +121,9 @@ class StandoutPdfEngine @Inject constructor(
             ParcelFileDescriptor.open(sourceFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                 PdfRenderer(pfd).use { renderer ->
                     PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { outDoc ->
+                        if (stripMetadata) {
+                            outDoc.documentInformation = PDDocumentInformation()
+                        }
                         val count = renderer.pageCount.coerceAtLeast(1)
                         val blackPaint = Paint().apply {
                             color = Color.BLACK
@@ -162,19 +140,20 @@ class StandoutPdfEngine @Inject constructor(
                                 canvas.drawColor(Color.WHITE)
                                 page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
-                                val applyManualBox = redactAllPagesWithBox || i == targetPageIndex
-                                if (applyManualBox) {
-                                    val left = boxNormalizedX.coerceIn(0f, 0.95f) * wPx
-                                    val top = boxNormalizedY.coerceIn(0f, 0.95f) * hPx
-                                    val right = (left + boxNormalizedW.coerceIn(0.05f, 1f) * wPx).coerceAtMost(wPx.toFloat())
-                                    val bottom = (top + boxNormalizedH.coerceIn(0.03f, 1f) * hPx).coerceAtMost(hPx.toFloat())
+                                val activeBoxes = if (redactAllPagesWithBoxes) {
+                                    boxes
+                                } else {
+                                    boxes.filter { it.pageIndex == i }
+                                }
+                                activeBoxes.forEach { box ->
+                                    val left = box.x.coerceIn(0f, 0.96f) * wPx
+                                    val top = box.y.coerceIn(0f, 0.96f) * hPx
+                                    val right = (left + box.w.coerceIn(0.04f, 1f) * wPx).coerceAtMost(wPx.toFloat())
+                                    val bottom = (top + box.h.coerceIn(0.025f, 1f) * hPx).coerceAtMost(hPx.toFloat())
                                     canvas.drawRect(left, top, right, bottom, blackPaint)
                                 }
-                                if (scrubPiiBand && i in piiPages) {
-                                    // Add subtle header/footer PII strip redaction when sensitive data detected and no box covers it
-                                    if (!applyManualBox) {
-                                        canvas.drawRect(wPx * 0.08f, hPx * 0.12f, wPx * 0.72f, hPx * 0.17f, blackPaint)
-                                    }
+                                if (scrubPiiBand && i in piiPages && activeBoxes.isEmpty()) {
+                                    canvas.drawRect(wPx * 0.08f, hPx * 0.12f, wPx * 0.72f, hPx * 0.17f, blackPaint)
                                 }
 
                                 val pdPage = PDPage(PDRectangle(page.width.toFloat(), page.height.toFloat()))
@@ -202,47 +181,93 @@ class StandoutPdfEngine @Inject constructor(
         headerText: String,
         footerText: String,
         includePageNumbers: Boolean,
+        watermarkOpacity: Float = 0.22f,
+        watermarkStyle: WatermarkStyle = WatermarkStyle.DIAGONAL,
+        pageNumberFormat: PageNumberFormat = PageNumberFormat.PAGE_X_OF_Y,
+        stripMetadata: Boolean = false,
         onProgress: (Float) -> Unit = {}
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
             outputFile.parentFile?.mkdirs()
             PDDocument.load(sourceFile, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                if (stripMetadata) {
+                    doc.documentInformation = PDDocumentInformation()
+                }
                 val total = doc.numberOfPages.coerceAtLeast(1)
+                val cleanWatermark = sanitizePdfText(watermarkText.take(36))
+                val cleanHeader = sanitizePdfText(headerText.take(72))
+                val cleanFooter = sanitizePdfText(footerText.take(48))
+                val alpha = watermarkOpacity.coerceIn(0.08f, 0.7f)
+
                 for (i in 0 until total) {
                     coroutineContext.ensureActive()
                     val page = doc.getPage(i)
                     val box = page.cropBox ?: page.mediaBox
                     PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
-                        if (watermarkText.isNotBlank()) {
-                            val gs = PDExtendedGraphicsState().apply { nonStrokingAlphaConstant = 0.22f }
+                        if (cleanWatermark.isNotBlank()) {
+                            val gs = PDExtendedGraphicsState().apply { nonStrokingAlphaConstant = alpha }
                             cs.setGraphicsStateParameters(gs)
-                            cs.beginText()
-                            cs.setFont(PDType1Font.HELVETICA_BOLD, 44f)
                             cs.setNonStrokingColor(90, 95, 110)
-                            val cx = box.lowerLeftX + box.width * 0.24f
-                            val cy = box.lowerLeftY + box.height * 0.38f
-                            val m = Matrix()
-                            m.concatenate(Matrix.getTranslateInstance(cx, cy))
-                            m.concatenate(Matrix.getRotateInstance(Math.toRadians(36.0), 0f, 0f))
-                            cs.setTextMatrix(m)
-                            cs.showText(watermarkText.take(36))
-                            cs.endText()
+
+                            when (watermarkStyle) {
+                                WatermarkStyle.DIAGONAL -> {
+                                    drawRotatedWatermark(
+                                        cs = cs,
+                                        text = cleanWatermark,
+                                        fontSize = 44f,
+                                        x = box.lowerLeftX + box.width * 0.22f,
+                                        y = box.lowerLeftY + box.height * 0.38f,
+                                        degrees = 36.0
+                                    )
+                                }
+                                WatermarkStyle.CENTER -> {
+                                    val approxW = PDType1Font.HELVETICA_BOLD.getStringWidth(cleanWatermark) / 1000f * 42f
+                                    drawRotatedWatermark(
+                                        cs = cs,
+                                        text = cleanWatermark,
+                                        fontSize = 42f,
+                                        x = box.lowerLeftX + ((box.width - approxW) / 2f).coerceAtLeast(24f),
+                                        y = box.lowerLeftY + box.height * 0.48f,
+                                        degrees = 0.0
+                                    )
+                                }
+                                WatermarkStyle.TILED -> {
+                                    for (row in 0..2) {
+                                        for (col in 0..1) {
+                                            drawRotatedWatermark(
+                                                cs = cs,
+                                                text = cleanWatermark,
+                                                fontSize = 24f,
+                                                x = box.lowerLeftX + box.width * (0.12f + col * 0.45f),
+                                                y = box.lowerLeftY + box.height * (0.18f + row * 0.30f),
+                                                degrees = 30.0
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
                             val opaque = PDExtendedGraphicsState().apply { nonStrokingAlphaConstant = 1.0f }
                             cs.setGraphicsStateParameters(opaque)
                         }
 
-                        if (headerText.isNotBlank()) {
+                        if (cleanHeader.isNotBlank()) {
                             cs.beginText()
                             cs.setFont(PDType1Font.HELVETICA, 9.5f)
                             cs.setNonStrokingColor(80, 90, 105)
                             cs.newLineAtOffset(box.lowerLeftX + 36f, box.upperRightY - 24f)
-                            cs.showText(headerText.take(72))
+                            cs.showText(cleanHeader)
                             cs.endText()
                         }
 
+                        val pageLabel = when (pageNumberFormat) {
+                            PageNumberFormat.PAGE_X_OF_Y -> "Page ${i + 1} of $total"
+                            PageNumberFormat.X_SLASH_Y -> "${i + 1} / $total"
+                            PageNumberFormat.NUMBER_ONLY -> "${i + 1}"
+                        }
                         val bottomParts = buildList {
-                            if (footerText.isNotBlank()) add(footerText.take(48))
-                            if (includePageNumbers) add("Page ${i + 1} of $total")
+                            if (cleanFooter.isNotBlank()) add(cleanFooter)
+                            if (includePageNumbers) add(pageLabel)
                         }
                         if (bottomParts.isNotEmpty()) {
                             cs.beginText()
@@ -261,6 +286,70 @@ class StandoutPdfEngine @Inject constructor(
         }
     }
 
+    private fun drawRotatedWatermark(
+        cs: PDPageContentStream,
+        text: String,
+        fontSize: Float,
+        x: Float,
+        y: Float,
+        degrees: Double
+    ) {
+        cs.beginText()
+        cs.setFont(PDType1Font.HELVETICA_BOLD, fontSize)
+        val m = Matrix()
+        m.concatenate(Matrix.getTranslateInstance(x, y))
+        if (degrees != 0.0) {
+            m.concatenate(Matrix.getRotateInstance(Math.toRadians(degrees), 0f, 0f))
+        }
+        cs.setTextMatrix(m)
+        cs.showText(text)
+        cs.endText()
+    }
+
+    suspend fun compressPdfForBatch(
+        sourceFile: File,
+        outputFile: File,
+        preset: BatchCompressionPreset,
+        stripMetadata: Boolean = true,
+        onProgress: (Float) -> Unit = {}
+    ): Result<File> = withContext(ioDispatcher) {
+        runCatching {
+            outputFile.parentFile?.mkdirs()
+            ParcelFileDescriptor.open(sourceFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    PDDocument(MemoryUsageSetting.setupTempFileOnly()).use { outDoc ->
+                        if (stripMetadata) {
+                            outDoc.documentInformation = PDDocumentInformation()
+                        }
+                        val count = renderer.pageCount.coerceAtLeast(1)
+                        for (i in 0 until count) {
+                            coroutineContext.ensureActive()
+                            renderer.openPage(i).use { page ->
+                                val wPx = preset.maxWidthPx
+                                val hPx = ((page.height.toFloat() / page.width.coerceAtLeast(1)) * wPx)
+                                    .toInt().coerceIn(280, 2200)
+                                val bmp = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
+                                Canvas(bmp).drawColor(Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                                val pdPage = PDPage(PDRectangle(page.width.toFloat(), page.height.toFloat()))
+                                outDoc.addPage(pdPage)
+                                val jpg = JPEGFactory.createFromImage(outDoc, bmp, preset.jpegQuality)
+                                bmp.recycle()
+                                PDPageContentStream(outDoc, pdPage).use { cs ->
+                                    cs.drawImage(jpg, 0f, 0f, pdPage.mediaBox.width, pdPage.mediaBox.height)
+                                }
+                            }
+                            onProgress((i + 1).toFloat() / count)
+                        }
+                        outDoc.save(outputFile)
+                    }
+                }
+            }
+            outputFile
+        }
+    }
+
     suspend fun comparePdfs(
         leftFile: File,
         rightFile: File,
@@ -273,8 +362,8 @@ class StandoutPdfEngine @Inject constructor(
             val leftSet = leftPages.flatMap { it.lines() }.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             val rightSet = rightPages.flatMap { it.lines() }.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
-            val added = (rightSet - leftSet).take(40).toList()
-            val removed = (leftSet - rightSet).take(40).toList()
+            val added = (rightSet - leftSet).take(50).toList()
+            val removed = (leftSet - rightSet).take(50).toList()
             val maxPages = maxOf(leftPages.size, rightPages.size)
             var changedPages = 0
             for (i in 0 until maxPages) {
@@ -285,7 +374,7 @@ class StandoutPdfEngine @Inject constructor(
 
             val reportLines = buildList {
                 add("PDF Comparison Report")
-                add("Left file pages: ${leftPages.size} | Right file pages: ${rightPages.size}")
+                add("Document A pages: ${leftPages.size} | Document B pages: ${rightPages.size}")
                 add("Changed pages: $changedPages")
                 add("")
                 add("Added lines (${added.size}):")
@@ -306,79 +395,202 @@ class StandoutPdfEngine @Inject constructor(
         }
     }
 
-    suspend fun runSecureWorkflowRecipe(
+    suspend fun runCustomWorkflowRecipe(
         sourceFile: File,
         outputFile: File,
-        watermarkText: String,
-        password: String,
-        onProgress: (Float) -> Unit = {}
+        config: WorkflowRecipeConfig,
+        onProgress: (Float, String) -> Unit = { _, _ -> }
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
-            onProgress(0.2f)
-            val stamped = File(context.cacheDir, "wf_stamped_${UUID.randomUUID()}.pdf")
-            stampWatermarkAndNumbers(
-                sourceFile = sourceFile,
-                outputFile = stamped,
-                watermarkText = watermarkText,
-                headerText = "Processed offline by PDF Toolkit",
-                footerText = "",
-                includePageNumbers = true
-            ).getOrThrow()
-            onProgress(0.65f)
-            outputFile.parentFile?.mkdirs()
-            PDDocument.load(stamped, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
-                if (password.isNotBlank()) {
-                    val ap = AccessPermission()
-                    val spp = StandardProtectionPolicy(password, password, ap).apply {
-                        encryptionKeyLength = 256
-                    }
-                    doc.protect(spp)
+            var currentInput = sourceFile
+            val tempFiles = mutableListOf<File>()
+            try {
+                if (config.compress) {
+                    onProgress(0.18f, "Step 1: Compressing PDF…")
+                    val compressed = File(context.cacheDir, "wf_comp_${UUID.randomUUID()}.pdf")
+                    compressPdfForBatch(
+                        sourceFile = currentInput,
+                        outputFile = compressed,
+                        preset = config.compressionPreset,
+                        stripMetadata = config.stripMetadata
+                    ).getOrThrow()
+                    tempFiles.add(compressed)
+                    currentInput = compressed
                 }
-                doc.save(outputFile)
+
+                if (config.watermarkText.isNotBlank() || config.includePageNumbers || config.stripMetadata) {
+                    onProgress(0.55f, "Applying stamps & metadata cleanup…")
+                    val stamped = File(context.cacheDir, "wf_stamp_${UUID.randomUUID()}.pdf")
+                    stampWatermarkAndNumbers(
+                        sourceFile = currentInput,
+                        outputFile = stamped,
+                        watermarkText = config.watermarkText,
+                        headerText = "",
+                        footerText = "",
+                        includePageNumbers = config.includePageNumbers,
+                        stripMetadata = config.stripMetadata
+                    ).getOrThrow()
+                    tempFiles.add(stamped)
+                    currentInput = stamped
+                }
+
+                onProgress(0.82f, if (config.password.isNotBlank()) "Encrypting with AES-256…" else "Finalizing PDF…")
+                outputFile.parentFile?.mkdirs()
+                PDDocument.load(currentInput, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                    if (config.stripMetadata) {
+                        doc.documentInformation = PDDocumentInformation()
+                    }
+                    if (config.password.isNotBlank()) {
+                        val ap = AccessPermission()
+                        val spp = StandardProtectionPolicy(config.password, config.password, ap).apply {
+                            encryptionKeyLength = 256
+                        }
+                        doc.protect(spp)
+                    }
+                    doc.save(outputFile)
+                }
+                onProgress(1f, "Workflow complete")
+                outputFile
+            } finally {
+                tempFiles.forEach { it.delete() }
             }
-            stamped.delete()
-            onProgress(1f)
-            outputFile
         }
     }
 
-    suspend fun batchStampAndZip(
+    suspend fun runBatchOperation(
         sources: List<Pair<File, String>>,
         outputZip: File,
-        includePageNumbers: Boolean,
-        watermarkText: String,
-        onProgress: (Float) -> Unit = {}
-    ): Result<File> = withContext(ioDispatcher) {
+        mode: BatchOperationMode,
+        compressionPreset: BatchCompressionPreset = BatchCompressionPreset.BALANCED,
+        watermarkText: String = "",
+        includePageNumbers: Boolean = true,
+        password: String = "",
+        onProgress: (Float, String) -> Unit = { _, _ -> }
+    ): Result<BatchRunSummary> = withContext(ioDispatcher) {
         runCatching {
             require(sources.isNotEmpty()) { "Select at least one PDF" }
+            if (mode == BatchOperationMode.LOCK_AES256) {
+                require(password.length >= 4) { "Enter a password (min 4 characters) for Batch Lock" }
+            }
             outputZip.parentFile?.mkdirs()
+
+            var succeeded = 0
+            val failed = mutableListOf<String>()
+            var inputBytes = 0L
+            val usedEntryNames = mutableSetOf<String>()
+
             ZipOutputStream(FileOutputStream(outputZip)).use { zos ->
-                sources.forEachIndexed { idx, (file, name) ->
+                sources.forEachIndexed { idx, (file, rawName) ->
                     coroutineContext.ensureActive()
-                    val tempOut = File(context.cacheDir, "batch_${UUID.randomUUID()}.pdf")
-                    stampWatermarkAndNumbers(
-                        sourceFile = file,
-                        outputFile = tempOut,
-                        watermarkText = watermarkText,
-                        headerText = "",
-                        footerText = "",
-                        includePageNumbers = includePageNumbers
-                    ).getOrThrow()
-                    val cleanName = name.substringBeforeLast('.') + "_processed.pdf"
-                    zos.putNextEntry(ZipEntry(cleanName))
-                    tempOut.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                    val safeBase = rawName.substringBeforeLast('.')
+                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                        .ifBlank { "document_${idx + 1}" }
+                    onProgress(
+                        idx.toFloat() / sources.size,
+                        "Processing ${idx + 1} of ${sources.size}: $rawName"
+                    )
+                    inputBytes += file.length()
+
+                    val tempOut = File(context.cacheDir, "batch_${UUID.randomUUID()}.tmp")
+                    val stepResult = runCatching {
+                        when (mode) {
+                            BatchOperationMode.COMPRESS -> {
+                                compressPdfForBatch(file, tempOut, compressionPreset).getOrThrow()
+                                uniqueZipName("${safeBase}_compressed.pdf", usedEntryNames)
+                            }
+                            BatchOperationMode.WATERMARK_AND_NUMBERS -> {
+                                stampWatermarkAndNumbers(
+                                    sourceFile = file,
+                                    outputFile = tempOut,
+                                    watermarkText = watermarkText,
+                                    headerText = "",
+                                    footerText = "",
+                                    includePageNumbers = includePageNumbers
+                                ).getOrThrow()
+                                uniqueZipName("${safeBase}_stamped.pdf", usedEntryNames)
+                            }
+                            BatchOperationMode.LOCK_AES256 -> {
+                                PDDocument.load(file, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
+                                    val ap = AccessPermission()
+                                    val spp = StandardProtectionPolicy(password, password, ap).apply {
+                                        encryptionKeyLength = 256
+                                    }
+                                    doc.protect(spp)
+                                    doc.save(tempOut)
+                                }
+                                uniqueZipName("${safeBase}_locked.pdf", usedEntryNames)
+                            }
+                            BatchOperationMode.EXTRACT_TEXT -> {
+                                val pages = extractPagesText(file)
+                                val combined = pages.mapIndexed { pIdx, text ->
+                                    "--- Page ${pIdx + 1} ---\n${text.trim()}"
+                                }.joinToString("\n\n")
+                                tempOut.writeText(combined, Charsets.UTF_8)
+                                uniqueZipName("${safeBase}_text.txt", usedEntryNames)
+                            }
+                        }
+                    }
+
+                    stepResult.onSuccess { entryName ->
+                        zos.putNextEntry(ZipEntry(entryName))
+                        tempOut.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                        succeeded++
+                    }.onFailure {
+                        failed.add(rawName)
+                    }
                     tempOut.delete()
-                    onProgress((idx + 1).toFloat() / sources.size)
+                    onProgress((idx + 1).toFloat() / sources.size, "Completed ${idx + 1} of ${sources.size}")
                 }
             }
-            outputZip
+
+            require(succeeded > 0) { "All batch files failed to process" }
+            BatchRunSummary(
+                totalFiles = sources.size,
+                succeededCount = succeeded,
+                failedNames = failed,
+                inputTotalBytes = inputBytes,
+                outputTotalBytes = outputZip.length()
+            )
+        }
+    }
+
+    private fun uniqueZipName(candidate: String, used: MutableSet<String>): String {
+        if (used.add(candidate)) return candidate
+        val base = candidate.substringBeforeLast('.')
+        val ext = candidate.substringAfterLast('.', "")
+        var counter = 2
+        while (true) {
+            val next = if (ext.isNotEmpty()) "${base}_$counter.$ext" else "${base}_$counter"
+            if (used.add(next)) return next
+            counter++
+        }
+    }
+
+    suspend fun extractPdfToTextFile(
+        sourcePdf: File,
+        outputTxt: File,
+        onProgress: (Float) -> Unit = {}
+    ): Result<Int> = withContext(ioDispatcher) {
+        runCatching {
+            outputTxt.parentFile?.mkdirs()
+            val pages = extractPagesText(sourcePdf)
+            val sb = StringBuilder()
+            pages.forEachIndexed { idx, txt ->
+                coroutineContext.ensureActive()
+                sb.append("=== Page ").append(idx + 1).append(" ===\n")
+                sb.append(txt.trim()).append("\n\n")
+                onProgress((idx + 1).toFloat() / pages.size.coerceAtLeast(1))
+            }
+            outputTxt.writeText(sb.toString().trim(), Charsets.UTF_8)
+            pages.size
         }
     }
 
     suspend fun exportPdfPagesAsPngZip(
         sourcePdf: File,
         outputZip: File,
+        targetWidthPx: Int = 1280,
         onProgress: (Float) -> Unit = {}
     ): Result<Int> = withContext(ioDispatcher) {
         runCatching {
@@ -391,9 +603,9 @@ class StandoutPdfEngine @Inject constructor(
                         for (i in 0 until count) {
                             coroutineContext.ensureActive()
                             renderer.openPage(i).use { page ->
-                                val w = 1280
+                                val w = targetWidthPx.coerceIn(720, 2200)
                                 val h = ((page.height.toFloat() / page.width.coerceAtLeast(1)) * w)
-                                    .toInt().coerceIn(300, 2400)
+                                    .toInt().coerceIn(300, 3200)
                                 val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                                 Canvas(bmp).drawColor(Color.WHITE)
                                 page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
@@ -471,7 +683,9 @@ class StandoutPdfEngine @Inject constructor(
     suspend fun buildIdCardPdf(
         frontUri: Uri,
         backUri: Uri?,
-        outputFile: File
+        outputFile: File,
+        grayscaleClean: Boolean = false,
+        addVerificationWatermark: Boolean = false
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
             outputFile.parentFile?.mkdirs()
@@ -490,18 +704,36 @@ class StandoutPdfEngine @Inject constructor(
                     cs.showText("ID Card Copy (Front & Back)")
                     cs.endText()
 
-                    decodeScaledBitmap(frontUri, 1200)?.let { frontBmp ->
-                        val frontImg = JPEGFactory.createFromImage(doc, frontBmp, 0.90f)
-                        frontBmp.recycle()
+                    decodeScaledBitmap(frontUri, 1200)?.let { raw ->
+                        val finalBmp = if (grayscaleClean) applyScanCleanupFilter(raw, ScanCleanMode.BLACK_AND_WHITE) else raw
+                        if (finalBmp !== raw) raw.recycle()
+                        val frontImg = JPEGFactory.createFromImage(doc, finalBmp, 0.90f)
+                        finalBmp.recycle()
                         cs.drawImage(frontImg, x, ph - 82f - cardH, cardW, cardH)
                     }
 
                     if (backUri != null) {
-                        decodeScaledBitmap(backUri, 1200)?.let { backBmp ->
-                            val backImg = JPEGFactory.createFromImage(doc, backBmp, 0.90f)
-                            backBmp.recycle()
+                        decodeScaledBitmap(backUri, 1200)?.let { raw ->
+                            val finalBmp = if (grayscaleClean) applyScanCleanupFilter(raw, ScanCleanMode.BLACK_AND_WHITE) else raw
+                            if (finalBmp !== raw) raw.recycle()
+                            val backImg = JPEGFactory.createFromImage(doc, finalBmp, 0.90f)
+                            finalBmp.recycle()
                             cs.drawImage(backImg, x, ph - 122f - cardH * 2f, cardW, cardH)
                         }
+                    }
+
+                    if (addVerificationWatermark) {
+                        val gs = PDExtendedGraphicsState().apply { nonStrokingAlphaConstant = 0.28f }
+                        cs.setGraphicsStateParameters(gs)
+                        cs.setNonStrokingColor(150, 35, 35)
+                        drawRotatedWatermark(
+                            cs = cs,
+                            text = "COPY FOR VERIFICATION ONLY",
+                            fontSize = 24f,
+                            x = pw * 0.16f,
+                            y = ph * 0.44f,
+                            degrees = 32.0
+                        )
                     }
                 }
                 doc.save(outputFile)
@@ -513,7 +745,7 @@ class StandoutPdfEngine @Inject constructor(
     suspend fun autoCleanImagesToPdf(
         imageUris: List<Uri>,
         outputFile: File,
-        highContrastScan: Boolean = true,
+        cleanMode: ScanCleanMode = ScanCleanMode.BLACK_AND_WHITE,
         onProgress: (Float) -> Unit = {}
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
@@ -523,7 +755,11 @@ class StandoutPdfEngine @Inject constructor(
                 imageUris.forEachIndexed { idx, uri ->
                     coroutineContext.ensureActive()
                     val rawBmp = decodeScaledBitmap(uri, 1600) ?: return@forEachIndexed
-                    val processed = if (highContrastScan) applyScanCleanupFilter(rawBmp) else rawBmp
+                    val processed = if (cleanMode == ScanCleanMode.ORIGINAL) {
+                        rawBmp
+                    } else {
+                        applyScanCleanupFilter(rawBmp, cleanMode)
+                    }
                     if (processed !== rawBmp) rawBmp.recycle()
 
                     val page = PDPage(PDRectangle.A4).also { doc.addPage(it) }
@@ -558,13 +794,14 @@ class StandoutPdfEngine @Inject constructor(
                     val results = scanner.process(inputImage).await()
                     results.map { bc ->
                         DecodedBarcodeItem(
-                            formatLabel = "Code ${bc.format}",
+                            formatLabel = readableBarcodeFormat(bc.format),
                             rawValue = bc.rawValue.orEmpty(),
                             displayType = when {
                                 bc.url != null -> "URL"
                                 bc.wifi != null -> "Wi-Fi"
                                 bc.email != null -> "Email"
                                 bc.phone != null -> "Phone"
+                                bc.contactInfo != null -> "Contact"
                                 else -> "Text"
                             }
                         )
@@ -575,16 +812,35 @@ class StandoutPdfEngine @Inject constructor(
             }
         }
 
+    private fun readableBarcodeFormat(format: Int): String = when (format) {
+        Barcode.FORMAT_QR_CODE -> "QR Code"
+        Barcode.FORMAT_CODE_128 -> "Code 128"
+        Barcode.FORMAT_CODE_39 -> "Code 39"
+        Barcode.FORMAT_CODE_93 -> "Code 93"
+        Barcode.FORMAT_EAN_13 -> "EAN-13"
+        Barcode.FORMAT_EAN_8 -> "EAN-8"
+        Barcode.FORMAT_UPC_A -> "UPC-A"
+        Barcode.FORMAT_UPC_E -> "UPC-E"
+        Barcode.FORMAT_PDF417 -> "PDF417"
+        Barcode.FORMAT_AZTEC -> "Aztec"
+        Barcode.FORMAT_DATA_MATRIX -> "Data Matrix"
+        Barcode.FORMAT_ITF -> "ITF"
+        else -> "Barcode"
+    }
+
     suspend fun translatePdfOffline(
         sourceFile: File,
+        sourceLang: TranslateTargetLang,
         targetLang: TranslateTargetLang,
+        bilingualMode: Boolean,
         outputFile: File,
         onProgress: (Float) -> Unit = {}
     ): Result<File> = withContext(ioDispatcher) {
         runCatching {
+            require(sourceLang != targetLang) { "Choose a different source and target language" }
             val pages = extractPagesText(sourceFile)
             val options = TranslatorOptions.Builder()
-                .setSourceLanguage(TranslateLanguage.ENGLISH)
+                .setSourceLanguage(sourceLang.code)
                 .setTargetLanguage(targetLang.code)
                 .build()
             val translator = Translation.getClient(options)
@@ -597,13 +853,19 @@ class StandoutPdfEngine @Inject constructor(
                     coroutineContext.ensureActive()
                     val snippet = txt.trim().take(2500)
                     val out = if (snippet.isNotBlank()) translator.translate(snippet).await() else ""
-                    translatedPages.add("--- Page ${idx + 1} (${targetLang.displayName}) ---\n$out")
+                    val pageBlock = if (bilingualMode) {
+                        "--- Page ${idx + 1} (${sourceLang.displayName} → ${targetLang.displayName}) ---\n" +
+                            "[Original]\n$snippet\n\n[Translated]\n$out"
+                    } else {
+                        "--- Page ${idx + 1} (${targetLang.displayName}) ---\n$out"
+                    }
+                    translatedPages.add(pageBlock)
                     onProgress(0.2f + 0.7f * (idx + 1).toFloat() / pages.size.coerceAtLeast(1))
                 }
                 createTextPdf(
                     rawText = translatedPages.joinToString("\n\n"),
                     outputFile = outputFile,
-                    title = "Translated (${targetLang.displayName})"
+                    title = "Translated (${sourceLang.displayName} to ${targetLang.displayName})"
                 ).getOrThrow()
                 onProgress(1f)
                 outputFile
@@ -635,23 +897,41 @@ class StandoutPdfEngine @Inject constructor(
         return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
     }
 
-    private fun applyScanCleanupFilter(src: Bitmap): Bitmap {
+    private fun applyScanCleanupFilter(src: Bitmap, mode: ScanCleanMode): Bitmap {
         val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
-        val cm = ColorMatrix().apply {
-            setSaturation(0f)
-            val contrast = 1.45f
-            val translate = (-0.5f * contrast + 0.5f) * 255f + 16f
-            postConcat(
-                ColorMatrix(
-                    floatArrayOf(
-                        contrast, 0f, 0f, 0f, translate,
-                        0f, contrast, 0f, 0f, translate,
-                        0f, 0f, contrast, 0f, translate,
-                        0f, 0f, 0f, 1f, 0f
+        val cm = when (mode) {
+            ScanCleanMode.BLACK_AND_WHITE -> ColorMatrix().apply {
+                setSaturation(0f)
+                val contrast = 1.48f
+                val translate = (-0.5f * contrast + 0.5f) * 255f + 18f
+                postConcat(
+                    ColorMatrix(
+                        floatArrayOf(
+                            contrast, 0f, 0f, 0f, translate,
+                            0f, contrast, 0f, 0f, translate,
+                            0f, 0f, contrast, 0f, translate,
+                            0f, 0f, 0f, 1f, 0f
+                        )
                     )
                 )
-            )
+            }
+            ScanCleanMode.COLOR_ENHANCED -> ColorMatrix().apply {
+                setSaturation(1.22f)
+                val contrast = 1.24f
+                val translate = (-0.5f * contrast + 0.5f) * 255f + 12f
+                postConcat(
+                    ColorMatrix(
+                        floatArrayOf(
+                            contrast, 0f, 0f, 0f, translate,
+                            0f, contrast, 0f, 0f, translate,
+                            0f, 0f, contrast, 0f, translate,
+                            0f, 0f, 0f, 1f, 0f
+                        )
+                    )
+                )
+            }
+            ScanCleanMode.ORIGINAL -> ColorMatrix()
         }
         val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
         canvas.drawBitmap(src, 0f, 0f, paint)
